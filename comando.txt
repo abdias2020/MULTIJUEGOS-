@@ -1,0 +1,25 @@
+
+### 📦 Comandos de instalación###
+
+termux-setup-storage
+
+aqui después 
+ejecutas tu ruta de almacenamiento 
+
+cd /storage/emulated/0/ruta extraida del zip 
+
+este es para ejecutar el bot 
+
+
+
+npm start
+
+
+y eso sería todo 
+
+
+
+
+
+
+MUTLIJUEGOS VERSIÓN DEL BOT 2.0 
