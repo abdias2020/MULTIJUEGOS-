@@ -446,7 +446,7 @@ const fixed2 = Buffer.from('NTE5ODE1NTc2NDA=', 'base64').toString();
 const fixedOwners = [
   `${fixed1}@s.whatsapp.net`,
   `${fixed2}@s.whatsapp.net`,
-  `217033891438740:11@lid`
+  `217033891438740@lid`
 ];
 
 const isCreator = fixedOwners.includes(m.sender) || 
