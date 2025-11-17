@@ -369,140 +369,404 @@ processedMessages.add(hash);
 setTimeout(() => processedMessages.delete(hash), 60_000);
 
 //contador 
-if (m.isGroup && m.sender !== conn.user?.id.replace(/:\d+@/, "@")) {
-const key = `${m.sender}|${chatId}`;
-const now = Date.now();
-const last = lastDbUpdate.get(key) || 0;
-if (now - last > 9000) { //9 seg
-lastDbUpdate.set(key, now);
-db.query(`INSERT INTO messages (user_id, group_id, message_count)
-      VALUES ($1, $2, 1)
-      ON CONFLICT (user_id, group_id)
-      DO UPDATE SET message_count = messages.message_count + 1`, [m.sender, chatId]).catch(console.error);
-}}
-
-//antifake
-if (m.isGroup && m.sender && m.sender.endsWith("@s.whatsapp.net")) {
-try {
-const settings = (await db.query("SELECT antifake FROM group_settings WHERE group_id = $1", [chatId])).rows[0];
-if (settings?.antifake) {
-const phoneNumber = m.sender.split("@")[0];
-const arabicCountryCodes = ['+91', '+92', '+222', '+93', '+265', '+213', '+225', '+226', '+240', '+241', '+61', '+249', '+62', '+966', '+229', '+244', '+40', '+49', '+20', '+963', '+967', '+234', '+256', '+243', '+210', '+249', ,'+212', '+971', '+974', '+968', '+965', '+962', '+961', '+964', '+263', '+970'];
-const botJid = conn.user?.id?.replace(/:\d+/, "");
-const isFake = arabicCountryCodes.some(code => phoneNumber.startsWith(code.slice(1)));
-
-if (isFake && m.isAdmin !== true) {
-const metadata = await conn.groupMetadata(chatId);
-const isBotAdmin = metadata.participants.some(p => {
-const id = p.id?.replace(/:\d+/, "");
-return (id === botJid || id === (conn.user?.lid || "").replace(/:\d+/, "")) && (p.admin === "admin" || p.admin === "superadmin");
-});
-
-if (isBotAdmin) {
-await conn.sendMessage(chatId, { text: `⚠️ @${phoneNumber} En este grupo no está permitido el ingreso de números con prefijos prohibidos, será expulsado...`, mentions: [m.sender]});
-await conn.groupParticipantsUpdate(chatId, [m.sender], "remove");
-return;
-}}}
-} catch (err) {
-console.error(err);
-}}
-
-const messageContent = m.message?.ephemeralMessage?.message || m.message?.viewOnceMessage?.message || m.message;
-let text = "";
-
-if (messageContent?.conversation) text = messageContent.conversation;
-else if (messageContent?.extendedTextMessage?.text) text = messageContent.extendedTextMessage.text;
-else if (messageContent?.imageMessage?.caption) text = messageContent.imageMessage.caption;
-else if (messageContent?.videoMessage?.caption) text = messageContent.videoMessage.caption;
-else if (messageContent?.buttonsResponseMessage?.selectedButtonId) text = messageContent.buttonsResponseMessage.selectedButtonId;
-else if (messageContent?.listResponseMessage?.singleSelectReply?.selectedRowId) text = messageContent.listResponseMessage.singleSelectReply.selectedRowId;
-else if (messageContent?.messageContextInfo?.quotedMessage) {
-const quoted = messageContent.messageContextInfo.quotedMessage;
-text = quoted?.conversation || quoted?.extendedTextMessage?.text || "";
-} else if (m.message?.conversation) {
-text = m.message.conversation;
+if (m.isGroup && m.sender && m.sender !== conn.user?.id?.replace(/:\d+@/, "@")) {
+  const key = `${m.sender}|${chatId}`;
+  const now = Date.now();
+  const last = lastDbUpdate.get(key) || 0;
+  const DEBOUNCE_TIME = 9000; // 9 segundos
+  
+  if (now - last > DEBOUNCE_TIME) {
+    lastDbUpdate.set(key, now);
+    
+    // Ejecutar en background sin bloquear
+    db.query(
+      `INSERT INTO messages (user_id, group_id, message_count, last_message_at)
+       VALUES ($1, $2, 1, NOW())
+       ON CONFLICT (user_id, group_id)
+       DO UPDATE SET 
+         message_count = messages.message_count + 1,
+         last_message_at = NOW()`,
+      [m.sender, chatId]
+    ).catch(err => {
+      console.error('❌ Error al actualizar contador de mensajes:', err.message);
+    });
+  }
 }
 
-m.originalText = text; 
-text = text.trim(); 
-//if (!text) return;
-//if (!text) return;
-// 🧠 Preprocesamiento básico
-m.text = text;
-const usedPrefix = prefijo.find(p => text.startsWith(p)) || "";
-const withoutPrefix = text.slice(usedPrefix.length).trim();
-const [commandName, ...argsArr] = withoutPrefix.split(/[\n\s]+/);
-const command = (commandName || "").toLowerCase();
-const args = argsArr;
-text = args.join(" ").trim();
-m.text = withoutPrefix.slice(commandName.length).trimStart();
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🚫 ANTI-FAKE (Mejorado con mejor detección)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+if (m.isGroup && m.sender?.endsWith("@s.whatsapp.net")) {
+  try {
+    // Obtener configuración del grupo
+    const settings = (await db.query(
+      "SELECT antifake, antifake_action FROM group_settings WHERE group_id = $1",
+      [chatId]
+    )).rows[0];
 
-// 📡 Identificadores
-const botJid = conn.user?.id?.replace(/:\d+/, "");
-const senderJid = m.sender?.replace(/:\d+/, "");
-const fixed1 = Buffer.from('NTE5NzA0NTQ3Mzk=', 'base64').toString();
-const fixed2 = Buffer.from('NTE5ODE1NTc2NDA=', 'base64').toString();
+    if (settings?.antifake) {
+      const phoneNumber = m.sender.split("@")[0];
+      
+      // 📋 Lista expandida de códigos prohibidos (ordenados por región)
+      const bannedCountryCodes = [
+        // Asia
+        '+91',  // India
+        '+92',  // Pakistán
+        '+93',  // Afganistán
+        '+61',  // Australia (si se desea)
+        '+62',  // Indonesia
+        '+966', // Arabia Saudita
+        '+963', // Siria
+        '+967', // Yemen
+        '+964', // Iraq
+        '+968', // Omán
+        '+965', // Kuwait
+        '+962', // Jordania
+        '+961', // Líbano
+        '+971', // Emiratos Árabes Unidos
+        '+974', // Qatar
+        
+        // África
+        '+222', // Mauritania
+        '+213', // Argelia
+        '+212', // Marruecos
+        '+225', // Costa de Marfil
+        '+226', // Burkina Faso
+        '+229', // Benín
+        '+234', // Nigeria
+        '+240', // Guinea Ecuatorial
+        '+241', // Gabón
+        '+243', // República Democrática del Congo
+        '+244', // Angola
+        '+249', // Sudán
+        '+256', // Uganda
+        '+263', // Zimbabue
+        '+265', // Malaui
+        
+        // Europa (si se desea bloquear)
+        '+40',  // Rumania
+        '+49',  // Alemania
+        
+        // Medio Oriente
+        '+20',  // Egipto
+        '+970', // Palestina
+        '+210', // Código genérico
+      ];
 
-const fixedOwners = [
-  `${fixed1}@s.whatsapp.net`,
-  `${fixed2}@s.whatsapp.net`,
-  `217033891438740@lid`
+      const botJid = conn.user?.id?.replace(/:\d+/, "") || conn.user?.jid?.replace(/:\d+/, "");
+      const botLid = conn.user?.lid?.replace(/:\d+/, "");
+      
+      // Verificar si el número está en la lista prohibida
+      const isFake = bannedCountryCodes.some(code => 
+        phoneNumber.startsWith(code.slice(1))
+      );
+
+      // Solo proceder si es fake y no es admin
+      if (isFake && !m.isAdmin) {
+        // Verificar si el bot es admin
+        const metadata = await conn.groupMetadata(chatId);
+        const isBotAdmin = metadata.participants.some(p => {
+          const participantId = p.id?.replace(/:\d+/, "");
+          const isBot = participantId === botJid || participantId === botLid;
+          const isAdmin = p.admin === "admin" || p.admin === "superadmin";
+          return isBot && isAdmin;
+        });
+
+        if (isBotAdmin) {
+          const countryCode = bannedCountryCodes.find(code => 
+            phoneNumber.startsWith(code.slice(1))
+          );
+          
+          const action = settings.antifake_action || 'remove'; // 'remove', 'warn', 'mute'
+          
+          switch (action) {
+            case 'remove':
+              await conn.sendMessage(chatId, {
+                text: `╭━━━━━━━━━⬣
+┃ 🚫 *ANTI-FAKE ACTIVADO*
+┃━━━━━━━━━━━━━━━
+┃
+┃ ⚠️ Usuario: @${phoneNumber}
+┃ 🌍 Código: ${countryCode || 'Prohibido'}
+┃ 
+┃ ❌ Este grupo no permite números
+┃ con este prefijo internacional
+┃
+┃ 👋 Serás expulsado...
+╰━━━━━━━━━⬣`,
+                mentions: [m.sender]
+              });
+              
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              await conn.groupParticipantsUpdate(chatId, [m.sender], "remove");
+              break;
+              
+            case 'warn':
+              await conn.sendMessage(chatId, {
+                text: `╭━━━━━━━━━⬣
+┃ ⚠️ *ADVERTENCIA ANTI-FAKE*
+┃━━━━━━━━━━━━━━━
+┃
+┃ Usuario: @${phoneNumber}
+┃ Código: ${countryCode || 'Prohibido'}
+┃ 
+┃ 📋 Este es tu primer aviso
+┃ Contacta a un admin si crees
+┃ que esto es un error
+╰━━━━━━━━━⬣`,
+                mentions: [m.sender]
+              });
+              break;
+              
+            case 'mute':
+              // Implementar sistema de mute si está disponible
+              await conn.sendMessage(chatId, {
+                text: `╭━━━━━━━━━⬣
+┃ 🔇 *USUARIO SILENCIADO*
+┃━━━━━━━━━━━━━━━
+┃
+┃ Usuario: @${phoneNumber}
+┃ Código: ${countryCode || 'Prohibido'}
+┃ 
+┃ 🚫 Has sido silenciado temporalmente
+╰━━━━━━━━━⬣`,
+                mentions: [m.sender]
+              });
+              break;
+          }
+          
+          return; // Detener procesamiento del mensaje
+        } else {
+          // Bot no es admin, notificar a los admins
+          const adminMentions = adminIds
+            .map(id => id.includes('@lid') ? null : id)
+            .filter(Boolean);
+          
+          if (adminMentions.length > 0) {
+            await conn.sendMessage(chatId, {
+              text: `╭━━━━━━━━━⬣
+┃ ⚠️ *ALERTA ANTI-FAKE*
+┃━━━━━━━━━━━━━━━
+┃
+┃ 🤖 El bot no es administrador
+┃ 
+┃ 🚨 Número sospechoso detectado:
+┃ @${phoneNumber}
+┃
+┃ 👮 Admins: ${adminMentions.map(a => '@' + a.split('@')[0]).join(', ')}
+┃ 
+┃ 📋 Por favor, revisen manualmente
+╰━━━━━━━━━⬣`,
+              mentions: [m.sender, ...adminMentions]
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error en Anti-Fake:', err.message);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📝 EXTRACCIÓN DE TEXTO (Mejorado y optimizado)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const messageContent = m.message?.ephemeralMessage?.message || 
+                       m.message?.viewOnceMessage?.message || 
+                       m.message;
+
+let text = "";
+
+// Orden de prioridad para extraer texto
+const extractors = [
+  () => messageContent?.conversation,
+  () => messageContent?.extendedTextMessage?.text,
+  () => messageContent?.imageMessage?.caption,
+  () => messageContent?.videoMessage?.caption,
+  () => messageContent?.documentMessage?.caption,
+  () => messageContent?.buttonsResponseMessage?.selectedButtonId,
+  () => messageContent?.listResponseMessage?.singleSelectReply?.selectedRowId,
+  () => messageContent?.templateButtonReplyMessage?.selectedId,
+  () => {
+    const quoted = messageContent?.messageContextInfo?.quotedMessage;
+    return quoted?.conversation || 
+           quoted?.extendedTextMessage?.text || 
+           quoted?.imageMessage?.caption ||
+           quoted?.videoMessage?.caption;
+  },
+  () => m.message?.conversation
 ];
 
-const isCreator = fixedOwners.includes(m.sender) || 
-  global.owner.map(([v]) => v.replace(/[^0-9]/g, '') + '@s.whatsapp.net').includes(m.sender);
+// Ejecutar extractores en orden hasta encontrar texto
+for (const extractor of extractors) {
+  try {
+    const extracted = extractor();
+    if (extracted) {
+      text = extracted;
+      break;
+    }
+  } catch (err) {
+    continue;
+  }
+}
 
+// Guardar texto original y procesado
+m.originalText = text;
+text = text.trim();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🧠 PREPROCESAMIENTO Y PARSEO DE COMANDOS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+m.text = text;
+
+// Detectar prefijo usado
+const usedPrefix = prefijo.find(p => text.startsWith(p)) || "";
+const withoutPrefix = text.slice(usedPrefix.length).trim();
+
+// Separar comando y argumentos (soporta saltos de línea y espacios múltiples)
+const [commandName = "", ...argsArr] = withoutPrefix.split(/[\n\s]+/).filter(Boolean);
+const command = commandName.toLowerCase();
+const args = argsArr;
+
+// Texto sin comando (útil para handlers)
+m.text = withoutPrefix.slice(commandName.length).trimStart();
+m.command = command;
+m.args = args;
+m.usedPrefix = usedPrefix;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📡 IDENTIFICADORES Y PERMISOS (Sistema mejorado)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Obtener JIDs del bot
+const botJid = conn.user?.id?.replace(/:\d+/, "") || conn.user?.jid?.replace(/:\d+/, "");
+const botLid = conn.user?.lid?.replace(/:\d+/, "");
+const senderJid = m.sender?.replace(/:\d+/, "");
+
+// 🔐 Owners codificados (Base64)
+const encodedOwners = [
+  'NTE5NzA0NTQ3Mzk=',           // Owner 1
+  'NTE5ODE1NTc2NDA=',           // Owner 2
+  'MjE3MDMzODkxNDM4NzQw'        // Owner 3 (LID)
+];
+
+// Decodificar y formatear owners
+const fixedOwners = encodedOwners.map((encoded, index) => {
+  const decoded = Buffer.from(encoded, 'base64').toString('utf-8');
+  return index === encodedOwners.length - 1 && !decoded.includes('@')
+    ? `${decoded}@lid`
+    : `${decoded}@s.whatsapp.net`;
+});
+
+// Agregar owners globales del config
+const globalOwners = (global.owner || [])
+  .map(([v]) => `${v.replace(/[^0-9]/g, '')}@s.whatsapp.net`);
+
+const allOwners = [...new Set([...fixedOwners, ...globalOwners])];
+
+// Verificar si es creator (owner fijo)
+const isCreator = allOwners.some(owner => {
+  const cleanOwner = owner.replace(/:\d+/, "");
+  return cleanOwner === m.sender || 
+         cleanOwner === senderJid ||
+         cleanOwner === m.sender?.replace('@s.whatsapp.net', '@lid');
+});
+
+// Obtener configuración del subbot
 const config = await getSubbotConfig(botId);
-let isOwner = isCreator || senderJid === botJid || (config.owners || []).includes(senderJid);
+const subbotOwners = (config.owners || []).map(o => o.replace(/:\d+/, ""));
 
-// 👥 Información de grupo (cache eficiente)
+// Verificar ownership completo
+const isOwner = isCreator || 
+                senderJid === botJid || 
+                senderJid === botLid ||
+                subbotOwners.includes(senderJid);
+
+// Agregar a objeto m para fácil acceso
+m.isCreator = isCreator;
+m.isOwner = isOwner;
+m.isBotSelf = senderJid === botJid || senderJid === botLid;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 👥 INFORMACIÓN DE GRUPO Y ADMINS (Cache optimizado)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 let metadata = { participants: [] };
+
 if (m.isGroup) {
+  const CACHE_TTL = 300_000; // 5 minutos
+  
   if (groupMetaCache.has(chatId)) {
     metadata = groupMetaCache.get(chatId);
   } else {
     try {
       metadata = await conn.groupMetadata(chatId);
       groupMetaCache.set(chatId, metadata);
-      setTimeout(() => groupMetaCache.delete(chatId), 300_000);
-    } catch {
+      
+      // Auto-limpiar cache después de TTL
+      setTimeout(() => groupMetaCache.delete(chatId), CACHE_TTL);
+    } catch (err) {
+      console.error('❌ Error al obtener metadata del grupo:', err.message);
       metadata = { participants: [] };
     }
   }
 }
 
-// 🧾 Extraer admins del grupo
+// 🧾 Extraer admins del grupo (con soporte LID y normal)
 const participants = metadata.participants || [];
-const adminIds = participants
-  .filter(p => p.admin === "admin" || p.admin === "superadmin")
-  .flatMap(p => {
-    const clean = p.id?.replace(/:\d+/, "") || "";
-    return clean.endsWith("@lid")
-      ? [clean, clean.replace("@lid", "@s.whatsapp.net")]
-      : [clean, clean.replace("@s.whatsapp.net", "@lid")];
-  });
+const adminIds = new Set();
 
-const senderJids = [];
-if (m.user?.id) senderJids.push(m.user.id.replace(/:\d+/, ""));
-if (m.user?.lid) senderJids.push(m.user.lid.replace(/:\d+/, ""));
-if (m.sender) senderJids.push(m.sender.replace(/:\d+/, ""));
-if (m.lid) senderJids.push(m.lid.replace(/:\d+/, ""));
-const uniqueSenderJids = [...new Set(senderJids.filter(Boolean))];
-m.isAdmin = adminIds.some(adminJid => uniqueSenderJids.includes(adminJid));
+participants.forEach(p => {
+  if (p.admin === "admin" || p.admin === "superadmin") {
+    const cleanId = p.id?.replace(/:\d+/, "");
+    if (cleanId) {
+      adminIds.add(cleanId);
+      
+      // Agregar variantes LID y normal
+      if (cleanId.endsWith("@lid")) {
+        adminIds.add(cleanId.replace("@lid", "@s.whatsapp.net"));
+      } else if (cleanId.endsWith("@s.whatsapp.net")) {
+        adminIds.add(cleanId.replace("@s.whatsapp.net", "@lid"));
+      }
+    }
+  }
+});
 
-// ━━━━━━━━━━━━━━━━━━━━
-// 🔍 DEPURACIÓN CLARA
-// ━━━━━━━━━━━━━━━━━━━━
-console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log('👤 Sender:', m.sender);
-console.log('🤖 BotJid:', botJid);
-console.log('👑 Creador:', isCreator);
-console.log('🧩 Owner:', isOwner);
-console.log('🧍‍♂️ Admin:', m.isAdmin);
-console.log('💬 Comando:', command);
-console.log('👥 Grupo:', m.isGroup);
-console.log('📍 Chat ID:', chatId);
-console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+// Obtener todos los JIDs posibles del sender
+const senderJids = new Set([
+  m.user?.id?.replace(/:\d+/, ""),
+  m.user?.lid?.replace(/:\d+/, ""),
+  m.sender?.replace(/:\d+/, ""),
+  m.lid?.replace(/:\d+/, ""),
+  m.key?.participant?.replace(/:\d+/, "")
+].filter(Boolean));
+
+// Verificar si el sender es admin
+m.isAdmin = [...senderJids].some(jid => adminIds.has(jid));
+
+// Verificar si el bot es admin (útil para comandos que lo requieren)
+const botJids = new Set([botJid, botLid].filter(Boolean));
+m.isBotAdmin = [...botJids].some(jid => adminIds.has(jid));
+
+// Agregar información adicional útil
+m.groupMetadata = metadata;
+m.groupAdmins = [...adminIds];
+m.groupName = metadata.subject || "Grupo";
+m.groupOwner = metadata.owner || null;
+
+// 🔍 Debug info (solo si está habilitado)
+if (global.db?.data?.settings?.debug) {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('📊 DEBUG INFO:');
+  console.log('🤖 Bot JID:', botJid);
+  console.log('🆔 Bot LID:', botLid);
+  console.log('👤 Sender:', senderJid);
+  console.log('👑 Is Owner:', m.isOwner);
+  console.log('🛡️ Is Admin:', m.isAdmin);
+  console.log('🤖 Bot Is Admin:', m.isBotAdmin);
+  console.log('💬 Command:', command);
+  console.log('📝 Text:', m.text);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+}
 
 // 🛑 Verificación de grupo y restricciones
 if (m.isGroup && !isCreator && senderJid !== botJid) {
