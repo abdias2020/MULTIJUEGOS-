@@ -241,7 +241,7 @@ async function scrapeAPKFromPage(url) {
     };
 }
 
-handler.help = ['apk'];
+handler.help = ['apkurl'];
 handler.tags = ['downloader'];
 handler.command = /^(apk|mcpedl)$/i;
 handler.register = true;
