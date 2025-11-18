@@ -12,6 +12,7 @@ const tags = {
   rg: '🟢 REGISTRO',
   group: '⚙️ GRUPO',
   nable: '🕹 ENABLE/DISABLE',
+ 
   buscadores: '🔍 BUSCADORES',
   sticker: '🧧 STICKER',
   econ: '🛠 RPG',
@@ -23,6 +24,7 @@ const tags = {
   owner: '👑 OWNER'
 }
 
+// Lista de zonas horarias y banderas para mostrar hora de cada país
 const timezones = [
   { zone: 'America/Argentina/Buenos_Aires', flag: '🇦🇷', name: 'Argentina' },
   { zone: 'America/Mexico_City', flag: '🇲🇽', name: 'México' },
@@ -56,8 +58,6 @@ Unirte a nuestro canal de WhatsApp y enterarte de todas las novedades/actualizac
 
 *Puede hablar con bot de esta forma ej:*
 @%BoTag ¿Que es una api?
-
-👇 *Selecciona una categoría del menú*
 `.trimStart(),
   header: '`<[ %category ]>`',
   body: ' %cmd %islimit %isPremium',
@@ -74,8 +74,8 @@ const handler = async (m, { conn, usedPrefix: _p, args }) => {
   const muptime = clockString(_uptime);
 
   // Formato de fecha y hora
-  const fecha = moment().format('DD/MM/YYYY');
-  const hora = moment().format('hh:mm:ss A');
+  const fecha = moment().format('DD/MM/YYYY');  // Fecha en formato dd/MM/yyyy
+  const hora = moment().format('hh:mm:ss A');  // Hora en formato hh:mm:ss AM/PM
 
   let user;
   try {
@@ -124,40 +124,34 @@ const handler = async (m, { conn, usedPrefix: _p, args }) => {
   }));
 
   const categoryRequested = args[0]?.toLowerCase();
+  const validTags = categoryRequested && tags[categoryRequested] ? [categoryRequested] : Object.keys(tags);
 
-  // Si se solicita una categoría específica, mostrar comandos de esa categoría
-  if (categoryRequested && tags[categoryRequested]) {
-    let text = `*${tags[categoryRequested]}*\n\n`;
-    
-    const comandos = help.filter(menu => menu.tags && menu.tags.includes(categoryRequested) && menu.help);
-    
-    if (comandos.length) {
-      for (const plugin of comandos) {
-        for (const helpCmd of plugin.help) {
-          text += defaultMenu.body
-            .replace(/%cmd/g, plugin.prefix ? helpCmd : _p + helpCmd)
-            .replace(/%islimit/g, plugin.limit ? '(💎)' : '')
-            .replace(/%isPremium/g, plugin.premium ? '(💵)' : '') + '\n';
-        }
-      }
-    } else {
-      text += 'No hay comandos disponibles en esta categoría.';
-    }
-
-    try {
-      await conn.sendMessage(chatId, { text }, { quoted: m });
-    } catch (err) {
-      console.error(err);
-    }
-    return;
-  }
-
-  // Menú principal con botones de categorías
+  // Construcción de texto de menú
   let text = defaultMenu.before;
 
+  // Construir hora y bandera de cada país
   const timezonesText = timezones.map(tz => `*• ${tz.flag} ${tz.name}:* ${moment().tz(tz.zone).format('hh:mm:ss A')}`).join('\n');
   text = text.replace('%timezones', timezonesText);
+
+  // Agregar fecha y hora en formato AM/PM
   text = text.replace('%fecha', fecha).replace('%hora', hora);
+
+  for (const tag of validTags) {
+    const comandos = help.filter(menu => menu.tags && menu.tags.includes(tag) && menu.help);
+    if (!comandos.length) continue;
+
+    text += '\n' + defaultMenu.header.replace(/%category/g, tags[tag]) + '\n';
+    for (const plugin of comandos) {
+      for (const helpCmd of plugin.help) {
+        text += defaultMenu.body
+          .replace(/%cmd/g, plugin.prefix ? helpCmd : _p + helpCmd)
+          .replace(/%islimit/g, plugin.limit ? '(💎)' : '')
+          .replace(/%isPremium/g, plugin.premium ? '(💵)' : '') + '\n';
+      }
+    }
+    text += defaultMenu.footer;
+  }
+  text += defaultMenu.after;
 
   const replace = {
     '%': '%', p: _p, name,
@@ -178,25 +172,12 @@ const handler = async (m, { conn, usedPrefix: _p, args }) => {
 
   text = String(text).replace(new RegExp(`%(${Object.keys(replace).join('|')})`, 'g'), (_, key) => replace[key] ?? '');
 
-  // Crear botones para cada categoría
-  const buttons = Object.keys(tags).map((tag, index) => ({
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: tags[tag],
-      id: `${_p}menu ${tag}`
-    })
-  }));
-
   try {
     let pp = fs.readFileSync('./media/Menu2.jpg');
-    
     await conn.sendMessage(chatId, {
       text: text,
       contextInfo: {
-        forwardedNewsletterMessageInfo: { 
-          newsletterJid: "120363305025805187@newsletter", 
-          newsletterName: "LoliBot ✨️" 
-        },
+        forwardedNewsletterMessageInfo: { newsletterJid: "120363305025805187@newsletter", newsletterName: "LoliBot ✨️" },
         forwardingScore: 999,
         isForwarded: true,
         mentionedJid: await conn.parseMention(text),
@@ -212,29 +193,10 @@ const handler = async (m, { conn, usedPrefix: _p, args }) => {
         }
       }
     }, { quoted: m });
-
-    // Enviar botones interactivos
-    await conn.sendMessage(chatId, {
-      interactiveMessage: {
-        header: {
-          title: "📋 CATEGORÍAS DEL MENÚ",
-          hasMediaAttachment: false
-        },
-        body: {
-          text: "Selecciona una categoría para ver los comandos disponibles:"
-        },
-        nativeFlowMessage: {
-          buttons: buttons,
-          messageParamsJson: ""
-        }
-      }
-    }, { quoted: m });
-
   } catch (err) {
     console.error(err);
   }
 }
-
 handler.help = ['menu']
 handler.tags = ['main']
 handler.command = /^(menu|help|allmenu|menú)$/i
