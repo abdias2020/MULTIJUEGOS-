@@ -47,7 +47,7 @@ renderLargerThumbnail: false,
 title: "✨️ MENU ✨️",
 body: `${nombreBot} (${tipo})`,
 thumbnailUrl: info.img2,
-sourceUrl: "https://chat.whatsapp.com/J1awHOq4FJx4GlvQMUKZhj?mode=wwc"
+sourceUrl: "https://skyultraplus.com"
 }}}, { quoted: m });
 };
 handler.help = ['menu2'];

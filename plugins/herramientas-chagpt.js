@@ -26,7 +26,8 @@ console.error("❌ Error obteniendo prompt o TTL:", e.message);
 
 if (!systemPrompt) {
 try {
-systemPrompt = await fetch('https://raw.githubusercontent.com/Skidy89/chat-gpt-jailbreak/main/Text.txt').then(r => r.text());
+systemPrompt = await fetch('https://raw.githubusercontent.com/elrebelde21/LoliBot-MD/main/src/text-chatgpt.txt').then(r => r.text());
+//await fetch('https://raw.githubusercontent.com/Skidy89/chat-gpt-jailbreak/main/Text.txt').then(r => r.text());
 } catch {
 systemPrompt = syms1; 
 }}
@@ -45,6 +46,17 @@ if (!memory.length || memory[0]?.role !== 'system' || memory[0]?.content !== sys
 }
 memory.push({ role: 'user', content: text });
 if (memory.length > 25) memory = [memory[0], ...memory.slice(-24)];
+
+function formatForWhatsApp(text) {
+  return text
+    .replace(/\\([!?.,"'])/g, '$1')  
+    .replace(/\*\*/g, "*") 
+    .replace(/\_\_/g, "_") 
+    .replace(/\\n/g, "\n") 
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$2')
+    .replace(/\n{3,}/g, "\n\n") 
+    .trim();
+}
 
 if (command == 'ia' || command == 'chatgpt') {
 await conn.sendPresenceUpdate('composing', m.chat)
@@ -69,7 +81,9 @@ await db.query(`INSERT INTO chat_memory (chat_id, history, updated_at)
 } catch (e) {
 console.error("❌ No se pudo guardar memoria:", e.message);
 }
-return await m.reply(result);
+const formatted = formatForWhatsApp(result)
+return await m.reply(formatted)
+//await m.reply(result);
 }
 
 if (command == 'openai'  || command == 'chatgpt2') {
@@ -83,7 +97,9 @@ await m.reply(decoded);
 try { 
 let gpt = await fetch(`${info.apis}/ia/gptweb?text=${text}`) 
 let res = await gpt.json()
-await m.reply(res.gpt)
+const formatted = formatForWhatsApp(res.gpt)
+await m.reply(formatted)
+//await m.reply(res.gpt)
 } catch {
 try {
 let gpt = await fetch(`${info.apis}/api/ia2?text=${text}`)
