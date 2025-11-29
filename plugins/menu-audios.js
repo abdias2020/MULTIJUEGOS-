@@ -33,8 +33,8 @@ const pp = fs.readFileSync('./media/Menu2.jpg');
 await conn.sendMessage(m.chat, { text: str,
 contextInfo: {
 forwardedNewsletterMessageInfo: {
-newsletterJid: "120363305025805187@newsletter",
-newsletterName: "LoliBot ✨️"
+newsletterJid: "120363422135512303@newsletter",
+newsletterName: "MULTIJUEGOS ✨️"
 },
 forwardingScore: 999,
 isForwarded: true,

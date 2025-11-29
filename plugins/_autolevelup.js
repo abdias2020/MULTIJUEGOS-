@@ -37,7 +37,7 @@ let nivelll = `🥳 ${m.pushName || 'Anónimo'} Que pro Acaba de alcanzar un nue
 *• Nivel:* ${before} ⟿ ${user.level}
 *• Rango:* ${user.role}
 *• Bot:* ${info.wm}`
-/*await global.conn.sendMessage("120363297379773397@newsletter", { text: [niv, nivell, nivelll].getRandom(), contextInfo: {
+/*await global.conn.sendMessage("120363422135512303@newsletter", { text: [niv, nivell, nivelll].getRandom(), contextInfo: {
 externalAdReply: {
 title: "【 🔔 Notificación General 🔔 】",
 body: '¡Haz subido de nivel 🥳!',

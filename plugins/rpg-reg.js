@@ -381,9 +381,9 @@ handler.before = async (m, { conn, usedPrefix }) => {
             `📊 *Total usuarios:* ${toNum(rtotalreg)}`,
           contextInfo: {
             forwardedNewsletterMessageInfo: {
-              newsletterJid: '120363305025805187@newsletter',
+              newsletterJid: '120363422135512303@newsletter',
               serverMessageId: '',
-              newsletterName: 'LoliBot ✨️'
+              newsletterName: 'MULTIJUEGOS ✨️'
             },
             forwardingScore: 9999999,
             isForwarded: true,
@@ -393,7 +393,7 @@ handler.before = async (m, { conn, usedPrefix }) => {
               showAdAttribution: false,
               renderLargerThumbnail: false,
               title: '𝐑𝐄𝐆𝐈𝐒𝐓𝐑𝐎 𝐂𝐎𝐌𝐏𝐋𝐄𝐓𝐀𝐃𝐎',
-              body: 'LoliBot',
+              body: 'MULTIJUEGOS',
               previewType: 'PHOTO',
               thumbnailUrl: 'https://i.postimg.cc/pXpyMxwL/Menu2.jpg',
               sourceUrl: info.md

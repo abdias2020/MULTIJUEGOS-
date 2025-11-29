@@ -79,9 +79,9 @@ contextInfo: {
 forwardingScore: 1, 
 isForwarded: true,
 forwardedNewsletterMessageInfo: {
-newsletterJid: '120363305025805187@newsletter',
+newsletterJid: '120363422135512303@newsletter',
 serverMessageId: '',
-newsletterName: 'LoliBot ✨️' },
+newsletterName: 'MULTIJUEGOS ✨️' },
 externalAdReply: {
 title: "✨️ Character Details ✨️",
 body: info.wm,

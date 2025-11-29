@@ -177,7 +177,7 @@ const handler = async (m, { conn, usedPrefix: _p, args }) => {
     await conn.sendMessage(chatId, {
       text: text,
       contextInfo: {
-        forwardedNewsletterMessageInfo: { newsletterJid: "120363305025805187@newsletter", newsletterName: "LoliBot ✨️" },
+        forwardedNewsletterMessageInfo: { newsletterJid: "120363422135512303@newsletter", newsletterName: "MULTIJUEGOS ✨️" },
         forwardingScore: 999,
         isForwarded: true,
         mentionedJid: await conn.parseMention(text),
