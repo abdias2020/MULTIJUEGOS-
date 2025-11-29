@@ -1,15 +1,15 @@
-// 🎧 Comando /play — LoliBot-MD (Mejorado con múltiples APIs)
+// 🎧 Comando /play — Búsqueda y descarga inteligente
 import { ogmp3 } from '../lib/youtubedl.js';
 import yts from 'yt-search';
 import fetch from 'node-fetch';
 
 const userRequests = {};
-const TIMEOUT = 25000;
+const userSelections = {}; // Almacena las selecciones de usuarios
+const TIMEOUT = 30000;
 const youtubeRegexID = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/;
 
-// 📦 APIs de respaldo para descargas
-const APIs = {
-  // API 1: ogmp3 (principal)
+// 📦 APIs para descargas de AUDIO
+const AudioAPIs = {
   ogmp3: async (url) => {
     const data = await ogmp3.download(url, '320', 'audio');
     if (data?.status && data?.result?.download) {
@@ -18,8 +18,28 @@ const APIs = {
     throw new Error('ogmp3 falló');
   },
 
-  // API 2: yt-dlp style API
-  ytdlp: async (url) => {
+  siputzx: async (url) => {
+    const res = await fetch(`https://api.siputzx.my.id/api/d/ytmp3?url=${url}`);
+    const { data } = await res.json();
+    if (data?.dl) return { url: data.dl, source: 'siputzx' };
+    throw new Error('siputzx falló');
+  },
+
+  agatz: async (url) => {
+    const res = await fetch(`https://api.agatz.xyz/api/ytmp3?url=${url}`);
+    const data = await res.json();
+    if (data?.data?.downloadUrl) return { url: data.data.downloadUrl, source: 'agatz' };
+    throw new Error('agatz falló');
+  },
+
+  zenkey: async (url) => {
+    const res = await fetch(`https://api.zenkey.my.id/api/download/ytmp3?apikey=zenkey&url=${url}`);
+    const { result } = await res.json();
+    if (result?.download?.url) return { url: result.download.url, source: 'zenkey' };
+    throw new Error('zenkey falló');
+  },
+
+  cobalt: async (url) => {
     const response = await fetch(`https://api.cobalt.tools/api/json`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -35,63 +55,98 @@ const APIs = {
       return { url: data.url, source: 'cobalt' };
     }
     throw new Error('cobalt falló');
-  },
-
-  // API 3: ytdl-core alternative
-  ytdlCore: async (url) => {
-    const videoId = url.match(youtubeRegexID)?.[1];
-    if (!videoId) throw new Error('ID inválido');
-    
-    const apiUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
-    const response = await fetch(apiUrl);
-    
-    if (response.ok) {
-      // Aquí iría la lógica de extracción de URL de audio
-      // Este es un ejemplo simplificado
-      throw new Error('ytdl-core no disponible');
-    }
-    throw new Error('ytdl-core falló');
-  },
-
-  // API 4: Descarga directa con yt-search
-  ytSearch: async (url) => {
-    const videoId = url.match(youtubeRegexID)?.[1];
-    if (!videoId) throw new Error('ID inválido');
-    
-    // Intenta usar una API pública genérica
-    const apiUrl = `https://api.vevioz.com/api/button/mp3/${videoId}`;
-    const response = await fetch(apiUrl);
-    const data = await response.json();
-    
-    if (data?.status && data?.url) {
-      return { url: data.url, source: 'vevioz' };
-    }
-    throw new Error('vevioz falló');
-  },
-
-  // API 5: Respaldo final con API genérica
-  generic: async (url) => {
-    const videoId = url.match(youtubeRegexID)?.[1];
-    if (!videoId) throw new Error('ID inválido');
-    
-    // API de respaldo genérica
-    const apiUrl = `https://api.downloadgram.org/LKSe8/${videoId}`;
-    const response = await fetch(apiUrl);
-    const data = await response.json();
-    
-    if (data?.download_url) {
-      return { url: data.download_url, source: 'generic' };
-    }
-    throw new Error('generic falló');
   }
 };
 
+// 📦 APIs para descargas de VIDEO
+const VideoAPIs = {
+  ogmp3: async (url, quality = '720') => {
+    const data = await ogmp3.download(url, quality, 'video');
+    if (data?.status && data?.result?.download) {
+      return { url: data.result.download, source: 'ogmp3-video' };
+    }
+    throw new Error('ogmp3 video falló');
+  },
+
+  siputzx: async (url) => {
+    const res = await fetch(`https://api.siputzx.my.id/api/d/ytmp4?url=${url}`);
+    const { data } = await res.json();
+    if (data?.dl) return { url: data.dl, source: 'siputzx-video' };
+    throw new Error('siputzx video falló');
+  },
+
+  agatz: async (url) => {
+    const res = await fetch(`https://api.agatz.xyz/api/ytmp4?url=${url}`);
+    const data = await res.json();
+    if (data?.data?.downloadUrl) return { url: data.data.downloadUrl, source: 'agatz-video' };
+    throw new Error('agatz video falló');
+  },
+
+  zenkey: async (url) => {
+    const res = await fetch(`https://api.zenkey.my.id/api/download/ytmp4?apikey=zenkey&url=${url}`);
+    const { result } = await res.json();
+    if (result?.download?.url) return { url: result.download.url, source: 'zenkey-video' };
+    throw new Error('zenkey video falló');
+  },
+
+  axeel: async (url) => {
+    const res = await fetch(`https://axeel.my.id/api/download/video?url=${url}`);
+    const json = await res.json();
+    if (json?.downloads?.url) return { url: json.downloads.url, source: 'axeel' };
+    throw new Error('axeel falló');
+  }
+};
+
+// 🔄 Función de descarga con fallback
+async function downloadWithFallback(url, apis) {
+  for (const [name, apiFunc] of Object.entries(apis)) {
+    try {
+      console.log(`🔄 Intentando con API: ${name}`);
+      const result = await Promise.race([
+        apiFunc(url),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), TIMEOUT)
+        )
+      ]);
+      
+      if (result?.url) {
+        console.log(`✅ Descarga exitosa con: ${result.source}`);
+        return result;
+      }
+    } catch (err) {
+      console.log(`⚠️ API ${name} falló:`, err.message);
+      continue;
+    }
+  }
+  throw new Error('Todas las APIs fallaron');
+}
+
 const handler = async (m, { conn, command, text, usedPrefix }) => {
+  // Si el usuario responde con MP3 o MP4
+  if (userSelections[m.sender]) {
+    const selection = text?.trim().toLowerCase();
+    
+    if (selection === '1' || selection === 'mp3' || selection === 'audio') {
+      return await downloadAudio(m, conn, userSelections[m.sender]);
+    } else if (selection === '2' || selection === 'mp4' || selection === 'video') {
+      return await downloadVideo(m, conn, userSelections[m.sender]);
+    } else {
+      return m.reply(
+        `❌ *Opción inválida*\n\n` +
+        `Por favor responde con:\n` +
+        `• *1* o *MP3* para audio\n` +
+        `• *2* o *MP4* para video`
+      );
+    }
+  }
+
+  // Validación de entrada
   if (!text?.trim()) {
     return m.reply(
       `🎧 *¿Qué deseas buscar?*\n\n` +
-      `💡 Ejemplos:\n` +
-      `• ${usedPrefix + command} Lil New no me puedo enamorar\n` +
+      `💡 *Ejemplos:*\n` +
+      `• ${usedPrefix + command} Bad Bunny - Monaco\n` +
+      `• ${usedPrefix + command} The Weeknd Blinding Lights\n` +
       `• ${usedPrefix + command} https://youtu.be/ejemplo\n\n` +
       `_Ingresa el nombre de la canción o enlace de YouTube_`
     );
@@ -113,26 +168,59 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
     const videoIdMatch = query.match(youtubeRegexID);
     const searchQuery = videoIdMatch ? `https://youtu.be/${videoIdMatch[1]}` : query;
 
+    m.react('🔍');
     await m.reply('🔎 *Buscando en YouTube...*');
 
     // 🔍 Búsqueda en YouTube
     const results = await yts(searchQuery);
     const video = results?.videos?.[0];
-    if (!video) throw new Error(`No se encontró ningún resultado para: ${text}`);
+    
+    if (!video) {
+      throw new Error(`No se encontró ningún resultado para: ${text}`);
+    }
 
-    // 1️⃣ Enviar info del video
+    // Guardar información del video para la selección del usuario
+    userSelections[m.sender] = {
+      video: video,
+      timestamp: Date.now()
+    };
+
+    // Limpiar selecciones antiguas (más de 2 minutos)
+    setTimeout(() => {
+      delete userSelections[m.sender];
+    }, 120000);
+
+    // Mostrar resultado y opciones
+    const message = 
+      `╭━━━『 *RESULTADO ENCONTRADO* 』━━━╮\n` +
+      `│\n` +
+      `│ 🎵 *Título:*\n` +
+      `│    ${video.title}\n` +
+      `│\n` +
+      `│ 👤 *Canal:* ${video.author.name}\n` +
+      `│ ⏱️ *Duración:* ${video.timestamp}\n` +
+      `│ 👁️ *Vistas:* ${formatNumber(video.views)}\n` +
+      `│ 📅 *Publicado:* ${video.ago}\n` +
+      `│\n` +
+      `│ 🔗 *URL:* ${video.url}\n` +
+      `│\n` +
+      `╰━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+      `┌─────────────────────\n` +
+      `│ *¿CÓMO DESEAS DESCARGARLO?*\n` +
+      `│\n` +
+      `│ 1️⃣ *MP3* - Solo audio (música)\n` +
+      `│ 2️⃣ *MP4* - Video completo\n` +
+      `│\n` +
+      `└─────────────────────\n\n` +
+      `_⏰ Responde con 1 o 2 en los próximos 2 minutos_`;
+
     await conn.sendMessage(m.chat, {
-      text: 
-        `🎶 *${video.title}*\n` +
-        `📺 Canal: ${video.author.name}\n` +
-        `⏱️ Duración: ${formatDuration(video.duration.seconds)}\n` +
-        `👁️ Vistas: ${formatNumber(video.views)}\n` +
-        `📅 Publicado: ${video.ago}\n\n` +
-        `📥 Preparando descarga 🎵...`,
+      image: { url: video.thumbnail },
+      caption: message,
       contextInfo: {
         externalAdReply: {
           title: video.title,
-          body: video.author.name,
+          body: `${video.author.name} • ${video.timestamp}`,
           thumbnailUrl: video.thumbnail,
           sourceUrl: video.url,
           mediaType: 1,
@@ -141,47 +229,50 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
       }
     }, { quoted: m });
 
-    // 2️⃣ Mensaje de descarga
-    await conn.sendMessage(m.chat, { text: `⬇️ *Descargando audio MP3...*` }, { quoted: m });
+    m.react('✅');
 
-    // 3️⃣ Intentar descargar con múltiples APIs (con fallback automático)
-    let audioUrl = null;
-    let usedApi = null;
-    const apiList = ['ogmp3', 'ytdlp', 'ytSearch', 'generic'];
-    
-    for (const apiName of apiList) {
-      try {
-        console.log(`🔄 Intentando con API: ${apiName}`);
-        const result = await Promise.race([
-          APIs[apiName](video.url),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout')), TIMEOUT)
-          )
-        ]);
-        
-        audioUrl = result.url;
-        usedApi = result.source;
-        console.log(`✅ Descarga exitosa con: ${usedApi}`);
-        break;
-      } catch (err) {
-        console.log(`⚠️ API ${apiName} falló:`, err.message);
-        continue;
-      }
-    }
+  } catch (err) {
+    console.error('❌ Error crítico:', err.message);
+    await m.reply(
+      `🚫 *Error en la búsqueda*\n\n` +
+      `📋 *Detalles:* ${err.message}\n\n` +
+      `💡 *Soluciones:*\n` +
+      `• Verifica el nombre de la canción\n` +
+      `• Intenta con otros términos de búsqueda\n` +
+      `• Usa un enlace directo de YouTube\n\n` +
+      `_Si persiste, reporta al desarrollador_`
+    );
+    m.react('❌');
+  } finally {
+    delete userRequests[m.sender];
+  }
+};
 
-    if (!audioUrl) {
-      throw new Error('Todas las APIs fallaron. Intenta más tarde.');
-    }
+// 🎵 Función para descargar AUDIO
+async function downloadAudio(m, conn, selection) {
+  const { video } = selection;
+  
+  if (userRequests[m.sender]) {
+    return m.reply('⏳ Espera, ya hay una descarga en curso...');
+  }
 
-    // 4️⃣ Enviar audio final
+  userRequests[m.sender] = true;
+  delete userSelections[m.sender];
+
+  try {
+    m.react('⬇️');
+    await m.reply('⬇️ *Descargando audio MP3...*\n_Esto puede tardar unos segundos_');
+
+    const result = await downloadWithFallback(video.url, AudioAPIs);
+
     await conn.sendMessage(m.chat, {
-      audio: { url: audioUrl },
+      audio: { url: result.url },
       mimetype: 'audio/mpeg',
       fileName: `${sanitizeFilename(video.title)}.mp3`,
       contextInfo: {
         externalAdReply: {
           title: video.title,
-          body: `${video.author.name} • MP3 (${usedApi})`,
+          body: `${video.author.name} • MP3 (${result.source})`,
           thumbnailUrl: video.thumbnail,
           sourceUrl: video.url,
           mediaType: 2
@@ -192,34 +283,70 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
     m.react('✅');
 
   } catch (err) {
-    console.error('❌ Error crítico:', err.message);
+    console.error('❌ Error en descarga de audio:', err);
     await m.reply(
-      `🚫 *Error en la descarga*\n\n` +
-      `📋 *Detalles:* ${err.message}\n` +
-      `💡 Intenta otro video o enlace de YouTube\n` +
-      `⚙️ Si persiste, reporta al desarrollador`
+      `🚫 *Error al descargar audio*\n\n` +
+      `📋 ${err.message}\n\n` +
+      `💡 Intenta con otro video o usa ${usedPrefix}ytmp3 ${video.url}`
     );
     m.react('❌');
   } finally {
     delete userRequests[m.sender];
   }
-};
-
-// ⚙️ Funciones auxiliares
-function formatDuration(s) {
-  if (!s) return '0:00';
-  const hours = Math.floor(s / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  const seconds = s % 60;
-  
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// 🎬 Función para descargar VIDEO
+async function downloadVideo(m, conn, selection) {
+  const { video } = selection;
+  
+  if (userRequests[m.sender]) {
+    return m.reply('⏳ Espera, ya hay una descarga en curso...');
+  }
+
+  userRequests[m.sender] = true;
+  delete userSelections[m.sender];
+
+  try {
+    m.react('⬇️');
+    await m.reply('⬇️ *Descargando video MP4...*\n_Esto puede tardar un poco más_');
+
+    const result = await downloadWithFallback(video.url, VideoAPIs);
+
+    await conn.sendMessage(m.chat, {
+      video: { url: result.url },
+      mimetype: 'video/mp4',
+      fileName: `${sanitizeFilename(video.title)}.mp4`,
+      caption: 
+        `🎬 *${video.title}*\n\n` +
+        `👤 *Canal:* ${video.author.name}\n` +
+        `⏱️ *Duración:* ${video.timestamp}\n` +
+        `⚙️ *Descargado con:* ${result.source}`,
+      thumbnail: video.thumbnail
+    }, { quoted: m });
+
+    m.react('✅');
+
+  } catch (err) {
+    console.error('❌ Error en descarga de video:', err);
+    await m.reply(
+      `🚫 *Error al descargar video*\n\n` +
+      `📋 ${err.message}\n\n` +
+      `💡 Intenta con otro video o usa ${usedPrefix}ytmp4 ${video.url}`
+    );
+    m.react('❌');
+  } finally {
+    delete userRequests[m.sender];
+  }
+}
+
+// ⚙️ Funciones auxiliares
 function formatNumber(n) {
-  return n ? n.toLocaleString('es-ES') : '0';
+  if (!n) return '0';
+  const num = parseInt(n.toString().replace(/\D/g, ''));
+  if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+  return num.toLocaleString('es-ES');
 }
 
 function sanitizeFilename(name) {
