@@ -5,6 +5,7 @@ import chalk from "chalk";
 import readlineSync from "readline-sync";
 import pino from "pino";
 import NodeCache from 'node-cache';
+import qrcode from 'qrcode-terminal';
 import { startSubBot } from "./lib/subbot.js";
 import "./config.js";
 import { handler, callUpdate, participantsUpdate, groupsUpdate } from "./handler.js";
@@ -120,7 +121,6 @@ const { version } = await baileys.fetchLatestBaileysVersion();
 console.info = () => {};
 console.debug = () => {};
 const sock = baileys.makeWASocket({
-printQRInTerminal: !usarCodigo && !fs.existsSync(BOT_CREDS_PATH),
 logger: pino({ level: 'silent' }),   
 browser: ['Windows', 'Chrome'],
 auth: { creds: state.creds,
@@ -147,8 +147,14 @@ globalThis.conn = sock;
 setupGroupEvents(sock);
 sock.ev.on("creds.update", saveCreds);
 
-sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
 const code = lastDisconnect?.error?.output?.statusCode || 0;
+
+// Mostrar QR cuando esté disponible (solo si no se usa código)
+if (qr && !usarCodigo) {
+console.log(chalk.yellow('\n📱 Escanea este código QR con WhatsApp:\n'));
+qrcode.generate(qr, { small: true });
+}
 
 if (connection === "open") {
 console.log(chalk.bold.greenBright('\n▣─────────────────────────────···\n│\n│❧ 𝙲𝙾𝙽𝙴𝙲𝚃𝙰𝙳𝙾 𝙲𝙾𝚁𝚁𝙴𝙲𝚃𝙰𝙼𝙴𝙽𝚃𝙴 𝙰𝙻 𝚆𝙷𝙰𝚃𝚂𝙰𝙿𝙿 ✅\n│\n▣─────────────────────────────···'))
@@ -292,4 +298,3 @@ console.error(chalk.red("❌ Error procesando groups.update:"), err);
 }});
 }
 }
-
