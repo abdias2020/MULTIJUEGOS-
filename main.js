@@ -153,7 +153,14 @@ const code = lastDisconnect?.error?.output?.statusCode || 0;
 // Mostrar QR cuando esté disponible (solo si no se usa código)
 if (qr && !usarCodigo) {
 console.log(chalk.yellow('\n📱 Escanea este código QR con WhatsApp:\n'));
-qrcode.generate(qr, { small: true });
+// Detectar tamaño de terminal y ajustar QR
+const terminalWidth = process.stdout.columns || 80;
+const useSmallQR = terminalWidth < 100;
+qrcode.generate(qr, { small: useSmallQR });
+console.log(chalk.gray(`\n💡 Tamaño del terminal: ${terminalWidth} columnas`));
+if (useSmallQR) {
+console.log(chalk.cyan('ℹ️  QR compacto activado para pantallas pequeñas\n'));
+}
 }
 
 if (connection === "open") {
