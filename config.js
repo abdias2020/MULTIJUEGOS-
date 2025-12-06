@@ -19,7 +19,7 @@ globalThis.info = {
 wm: "MULTIJUEGOS",
 vs: "2.0.0 (beta)",
 packname: "𝗦𝗧𝗜𝗖𝗞𝗘𝗥𝗦❤️‍🔥 - MULTIJUEGOS\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
-author: "Owner: @multijuego\n• Dueña: @abdiasmoreno",
+author: "Owner: @multijuego\n• Dueño: @abdiasmoreno",
 apis: "https://api.delirius.store",
 apikey: "GataDios",
 fgmods: { url: 'https://api.fgmods.xyz/api', key: 'elrebelde21' },

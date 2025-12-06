@@ -90,15 +90,8 @@ const showBanner = () => {
   }
 };
 
-// Mostrar banner
+// Mostrar banner solo una vez al inicio
 showBanner();
-
-// Escuchar cambios de tamaño de consola
-process.stdout.on('resize', () => {
-  console.clear();
-  console.log('Iniciando 🚀🚀🚀');
-  showBanner();
-});
 
 // Importar módulo principal
 import('./main.js');
