@@ -1,14 +1,15 @@
-// 🎧 Comando /play — Búsqueda y descarga inteligente
+// 🎧 Comando /play — Búsqueda y descarga inteligente (CORREGIDO)
 import { ogmp3 } from '../lib/youtubedl.js';
 import yts from 'yt-search';
 import fetch from 'node-fetch';
+import axios from 'axios';
 
 const userRequests = {};
 const userSelections = {}; // Almacena las selecciones de usuarios
 const TIMEOUT = 30000;
 const youtubeRegexID = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/;
 
-// 📦 APIs para descargas de AUDIO
+// 📦 APIs para descargas de AUDIO (15 APIs)
 const AudioAPIs = {
   ogmp3: async (url) => {
     const data = await ogmp3.download(url, '320', 'audio');
@@ -55,10 +56,96 @@ const AudioAPIs = {
       return { url: data.url, source: 'cobalt' };
     }
     throw new Error('cobalt falló');
+  },
+
+  ytdlplus: async (url) => {
+    const res = await fetch(`https://api.ytdlplus.com/download?url=${url}&format=mp3`);
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'ytdlplus' };
+    throw new Error('ytdlplus falló');
+  },
+
+  y2mate: async (url) => {
+    const res = await fetch(`https://api.y2mate.com/api/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, format: 'mp3' })
+    });
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'y2mate' };
+    throw new Error('y2mate falló');
+  },
+
+  savefrom: async (url) => {
+    const res = await fetch(`https://api.savefrom.net/download?url=${url}`);
+    const data = await res.json();
+    if (data?.url && data?.url[0]?.url) return { url: data.url[0].url, source: 'savefrom' };
+    throw new Error('savefrom falló');
+  },
+
+  ytmp3: async (url) => {
+    const res = await fetch(`https://www.yt-download.org/api/button/mp3/${url}`);
+    const data = await res.json();
+    if (data?.dlink) return { url: data.dlink, source: 'ytmp3' };
+    throw new Error('ytmp3 falló');
+  },
+
+  loader: async (url) => {
+    const res = await fetch(`https://api.loader.to/ajax/download.php?format=mp3&url=${encodeURIComponent(url)}`);
+    const data = await res.json();
+    if (data?.download?.url) return { url: data.download.url, source: 'loader' };
+    throw new Error('loader falló');
+  },
+
+  snapsave: async (url) => {
+    const res = await fetch('https://snapsave.app/action.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent(url)}`
+    });
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'snapsave' };
+    throw new Error('snapsave falló');
+  },
+
+  ytbmp3: async (url) => {
+    const res = await fetch(`https://api.ytbmp3.com/api/convert?url=${url}`);
+    const data = await res.json();
+    if (data?.download) return { url: data.download, source: 'ytbmp3' };
+    throw new Error('ytbmp3 falló');
+  },
+
+  converto: async (url) => {
+    const res = await fetch(`https://www.converto.io/api/convert`, {
+      method: 'POST',
+      body: JSON.stringify({ url: url }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data?.url) return { url: data.url, source: 'converto' };
+    throw new Error('converto falló');
+  },
+
+  ytmate: async (url) => {
+    const res = await fetch(`https://ytmate.app/api/convert?url=${url}&format=mp3`);
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'ytmate' };
+    throw new Error('ytmate falló');
+  },
+
+  yt5s: async (url) => {
+    const res = await fetch(`https://yt5s.com/api/ajaxConvert/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent(url)}&ftype=mp3`
+    });
+    const data = await res.json();
+    if (data?.dlink) return { url: data.dlink, source: 'yt5s' };
+    throw new Error('yt5s falló');
   }
 };
 
-// 📦 APIs para descargas de VIDEO
+// 📦 APIs para descargas de VIDEO (12 APIs)
 const VideoAPIs = {
   ogmp3: async (url, quality = '720') => {
     const data = await ogmp3.download(url, quality, 'video');
@@ -94,6 +181,69 @@ const VideoAPIs = {
     const json = await res.json();
     if (json?.downloads?.url) return { url: json.downloads.url, source: 'axeel' };
     throw new Error('axeel falló');
+  },
+
+  ytdlplus: async (url) => {
+    const res = await fetch(`https://api.ytdlplus.com/download?url=${url}&format=mp4`);
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'ytdlplus-video' };
+    throw new Error('ytdlplus video falló');
+  },
+
+  y2mate: async (url) => {
+    const res = await fetch(`https://api.y2mate.com/api/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, format: 'mp4', quality: '720' })
+    });
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'y2mate-video' };
+    throw new Error('y2mate video falló');
+  },
+
+  savefrom: async (url) => {
+    const res = await fetch(`https://api.savefrom.net/download?url=${url}`);
+    const data = await res.json();
+    const videoUrl = data?.url?.find(item => item.type === 'video')?.url;
+    if (videoUrl) return { url: videoUrl, source: 'savefrom-video' };
+    throw new Error('savefrom video falló');
+  },
+
+  loader: async (url) => {
+    const res = await fetch(`https://api.loader.to/ajax/download.php?format=720&url=${encodeURIComponent(url)}`);
+    const data = await res.json();
+    if (data?.download?.url) return { url: data.download.url, source: 'loader-video' };
+    throw new Error('loader video falló');
+  },
+
+  snapsave: async (url) => {
+    const res = await fetch('https://snapsave.app/action.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent(url)}`
+    });
+    const data = await res.json();
+    const videoUrl = data?.table?.find(item => item.quality === '720p')?.url;
+    if (videoUrl) return { url: videoUrl, source: 'snapsave-video' };
+    throw new Error('snapsave video falló');
+  },
+
+  ytmate: async (url) => {
+    const res = await fetch(`https://ytmate.app/api/convert?url=${url}&format=mp4`);
+    const data = await res.json();
+    if (data?.downloadUrl) return { url: data.downloadUrl, source: 'ytmate-video' };
+    throw new Error('ytmate video falló');
+  },
+
+  yt5s: async (url) => {
+    const res = await fetch(`https://yt5s.com/api/ajaxConvert/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent(url)}&ftype=mp4&fquality=720`
+    });
+    const data = await res.json();
+    if (data?.dlink) return { url: data.dlink, source: 'yt5s-video' };
+    throw new Error('yt5s video falló');
   }
 };
 
@@ -122,25 +272,26 @@ async function downloadWithFallback(url, apis) {
 }
 
 const handler = async (m, { conn, command, text, usedPrefix }) => {
-  // Si el usuario responde con MP3 o MP4
+  const input = text?.trim().toLowerCase();
+  
+  // 🔍 VERIFICAR SI EL USUARIO ESTÁ RESPONDIENDO A UNA SELECCIÓN
   if (userSelections[m.sender]) {
-    const selection = text?.trim().toLowerCase();
-    
-    if (selection === '1' || selection === 'mp3' || selection === 'audio') {
-      return await downloadAudio(m, conn, userSelections[m.sender]);
-    } else if (selection === '2' || selection === 'mp4' || selection === 'video') {
-      return await downloadVideo(m, conn, userSelections[m.sender]);
+    if (input === '1' || input === 'mp3' || input === 'audio') {
+      return await downloadAudio(m, conn, userSelections[m.sender], usedPrefix);
+    } else if (input === '2' || input === 'mp4' || input === 'video') {
+      return await downloadVideo(m, conn, userSelections[m.sender], usedPrefix);
     } else {
       return m.reply(
         `❌ *Opción inválida*\n\n` +
         `Por favor responde con:\n` +
-        `• *1* o *MP3* para audio\n` +
-        `• *2* o *MP4* para video`
+        `• *1* o *MP3* o *audio* para descargar audio\n` +
+        `• *2* o *MP4* o *video* para descargar video\n\n` +
+        `_Tienes 2 minutos para responder_`
       );
     }
   }
 
-  // Validación de entrada
+  // Validación de entrada para nueva búsqueda
   if (!text?.trim()) {
     return m.reply(
       `🎧 *¿Qué deseas buscar?*\n\n` +
@@ -176,6 +327,7 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
     const video = results?.videos?.[0];
     
     if (!video) {
+      delete userRequests[m.sender];
       throw new Error(`No se encontró ningún resultado para: ${text}`);
     }
 
@@ -187,7 +339,10 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
 
     // Limpiar selecciones antiguas (más de 2 minutos)
     setTimeout(() => {
-      delete userSelections[m.sender];
+      if (userSelections[m.sender]?.timestamp === userSelections[m.sender]?.timestamp) {
+        delete userSelections[m.sender];
+        console.log(`⏰ Selección expirada para ${m.sender}`);
+      }
     }, 120000);
 
     // Mostrar resultado y opciones
@@ -205,14 +360,17 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
       `│ 🔗 *URL:* ${video.url}\n` +
       `│\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
-      `┌─────────────────────\n` +
+      `┌──────────────────────────\n` +
       `│ *¿CÓMO DESEAS DESCARGARLO?*\n` +
       `│\n` +
-      `│ 1️⃣ *MP3* - Solo audio (música)\n` +
-      `│ 2️⃣ *MP4* - Video completo\n` +
+      `│ 🎵 Responde *1* o *MP3* para:\n` +
+      `│    → Solo audio (música)\n` +
       `│\n` +
-      `└─────────────────────\n\n` +
-      `_⏰ Responde con 1 o 2 en los próximos 2 minutos_`;
+      `│ 🎬 Responde *2* o *MP4* para:\n` +
+      `│    → Video completo\n` +
+      `│\n` +
+      `└──────────────────────────\n\n` +
+      `_⏰ Tienes 2 minutos para responder_`;
 
     await conn.sendMessage(m.chat, {
       image: { url: video.thumbnail },
@@ -249,7 +407,7 @@ const handler = async (m, { conn, command, text, usedPrefix }) => {
 };
 
 // 🎵 Función para descargar AUDIO
-async function downloadAudio(m, conn, selection) {
+async function downloadAudio(m, conn, selection, usedPrefix) {
   const { video } = selection;
   
   if (userRequests[m.sender]) {
@@ -287,7 +445,9 @@ async function downloadAudio(m, conn, selection) {
     await m.reply(
       `🚫 *Error al descargar audio*\n\n` +
       `📋 ${err.message}\n\n` +
-      `💡 Intenta con otro video o usa ${usedPrefix}ytmp3 ${video.url}`
+      `💡 Intenta con:\n` +
+      `• ${usedPrefix}ytmp3 ${video.url}\n` +
+      `• Otro video diferente`
     );
     m.react('❌');
   } finally {
@@ -296,7 +456,7 @@ async function downloadAudio(m, conn, selection) {
 }
 
 // 🎬 Función para descargar VIDEO
-async function downloadVideo(m, conn, selection) {
+async function downloadVideo(m, conn, selection, usedPrefix) {
   const { video } = selection;
   
   if (userRequests[m.sender]) {
@@ -331,7 +491,9 @@ async function downloadVideo(m, conn, selection) {
     await m.reply(
       `🚫 *Error al descargar video*\n\n` +
       `📋 ${err.message}\n\n` +
-      `💡 Intenta con otro video o usa ${usedPrefix}ytmp4 ${video.url}`
+      `💡 Intenta con:\n` +
+      `• ${usedPrefix}ytmp4 ${video.url}\n` +
+      `• Otro video diferente`
     );
     m.react('❌');
   } finally {
