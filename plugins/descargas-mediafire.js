@@ -10,42 +10,67 @@ const userRequests = {};
 
 const handler = async (m, { conn, args, usedPrefix, command }) => {
 const sticker = 'https://qu.ax/Wdsb.webp';
-if (!args[0]) return m.reply( `⚠️ 𝙄𝙣𝙜𝙧𝙚𝙨𝙚 𝙪𝙣 𝙀𝙣𝙡𝙖𝙘𝙚 𝙫𝙖𝙡𝙞𝙙𝙤 𝙙𝙚𝙡 𝙢𝙚𝙙𝙞𝙖𝙛𝙞𝙧𝙚 𝙀𝙟:*\n${usedPrefix + command} https://www.mediafire.com/file/sd9hl31vhhzf76v/EvolutionV1.1-beta_%2528Recomendado%2529.apk/file`)
+if (!args[0]) return m.reply(`⚠️ 𝙄𝙣𝙜𝙧𝙚𝙨𝙚 𝙪𝙣 𝙀𝙣𝙡𝙖𝙘𝙚 𝙫𝙖𝙡𝙞𝙙𝙤 𝙙𝙚𝙡 𝙢𝙚𝙙𝙞𝙖𝙛𝙞𝙧𝙚 𝙀𝙟:*\n${usedPrefix + command} https://www.mediafire.com/file/sd9hl31vhhzf76v/EvolutionV1.1-beta_%2528Recomendado%2529.apk/file`)
+
+// Validar URL de MediaFire
+if (!/^https?:\/\/(www\.)?mediafire\.com/i.test(args[0])) {
+return m.reply(`⚠️ *Enlace no válido.*\n📌 Asegúrate de ingresar una URL de MediaFire válida.\n\nEjemplo: \`${usedPrefix + command} https://www.mediafire.com/file/ejemplo/file.zip\``)
+}
 
 if (userRequests[m.sender]) return await conn.reply(m.chat, `⚠️ Hey @${m.sender.split('@')[0]} pendejo, ya estás descargando algo 🙄\nEspera a que termine tu solicitud actual antes de hacer otra...`, userCaptions.get(m.sender) || m);
 userRequests[m.sender] = true;
 m.react(`🚀`);
+
 try {
 const downloadAttempts = [
 async () => {
+const res = await fetch(`https://delirius-apiofc.vercel.app/download/mediafire?url=${encodeURIComponent(args[0])}`);
+if (!res.ok) throw new Error(`Error de la API: ${res.status} ${res.statusText}`);
+const json = await res.json();
+const data = json?.data || json?.result || json;
+return { 
+url: data?.url || data?.link || data?.download || data?.dl || data?.download_url,
+filename: data?.title || data?.filename || data?.name || 'archivo',
+filesize: data?.size || data?.filesize || 'Desconocido',
+mimetype: data?.mime || data?.mimetype || 'application/octet-stream'
+};
+},
+async () => {
 const res = await fetch(`https://api.delirius.store/download/mediafire?url=${args[0]}`);
 const data = await res.json();
-return { url: data.data[0].link,
+return { 
+url: data.data[0].link,
 filename: data.data[0].filename,
 filesize: data.data[0].size,
 mimetype: data.data[0].mime
-}},
+};
+},
 async () => {
 const res = await fetch(`https://api.neoxr.eu/api/mediafire?url=${args[0]}&apikey=russellxz`);
 const data = await res.json();
 if (!data.status || !data.data) throw new Error('Error en Neoxr');
-return { url: data.data.url,
+return { 
+url: data.data.url,
 filename: data.data.title,
 filesize: data.data.size,
 mimetype: data.data.mime
-}},
+};
+},
 async () => {
 const res = await fetch(`https://api.agatz.xyz/api/mediafire?url=${args[0]}`);
 const data = await res.json();
-return { url: data.data[0].link,
+return { 
+url: data.data[0].link,
 filename: data.data[0].nama,
 filesize: data.data[0].size,
 mimetype: data.data[0].mime
-}},
+};
+},
 async () => {
 const res = await fetch(`https://api.siputzx.my.id/api/d/mediafire?url=${args[0]}`);
 const data = await res.json();
-return data.data.map(file => ({ url: file.link,
+return data.data.map(file => ({ 
+url: file.link,
 filename: file.filename,
 filesize: file.size,
 mimetype: file.mime
@@ -58,13 +83,15 @@ let fileData = null;
 for (const attempt of downloadAttempts) {
 try {
 fileData = await attempt();
-if (fileData) break; 
+if (fileData && fileData.url) break; 
 } catch (err) {
 console.error(`Error in attempt: ${err.message}`);
-continue; // Si falla, intentar con la siguiente API
-}}
+continue;
+}
+}
 
-if (!fileData) throw new Error('No se pudo descargar el archivo desde ninguna API');
+if (!fileData || !fileData.url) throw new Error('No se pudo descargar el archivo desde ninguna API');
+
 const file = Array.isArray(fileData) ? fileData[0] : fileData;
 const caption = `┏━━『 𝐌𝐄𝐃𝐈𝐀𝐅𝐈𝐑𝐄 』━━•
 ┃❥ 𝐍𝐨𝐦𝐛𝐫𝐞 : ${file.filename}
@@ -72,7 +99,8 @@ const caption = `┏━━『 𝐌𝐄𝐃𝐈𝐀𝐅𝐈𝐑𝐄 』━━•
 ┃❥ 𝐓𝐢𝐩𝐨 : ${file.mimetype}
 ╰━━━⊰ 𓃠 ${info.vs} ⊱━━━━•
 > ⏳ ᴱˢᵖᵉʳᵉ ᵘⁿ ᵐᵒᵐᵉⁿᵗᵒ ᵉⁿ ˡᵒˢ ᵠᵘᵉ ᵉⁿᵛᶦᵒˢ ˢᵘˢ ᵃʳᶜʰᶦᵛᵒˢ`.trim();
-const captionMessage = await conn.reply(m.chat, caption, m)
+
+const captionMessage = await conn.reply(m.chat, caption, m);
 userCaptions.set(m.sender, captionMessage);
 await conn.sendFile(m.chat, file.url, file.filename, '', m, null, { mimetype: file.mimetype, asDocument: true });
 m.react('✅');
@@ -83,7 +111,9 @@ console.error(e);
 handler.limit = false;
 } finally {
 delete userRequests[m.sender];
-}};
+}
+};
+
 handler.help = ['mediafire', 'mediafiredl'];
 handler.tags = ['downloader'];
 handler.command = /^(mediafire|mediafiredl|dlmediafire)$/i;
