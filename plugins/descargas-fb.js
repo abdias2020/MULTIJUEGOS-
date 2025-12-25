@@ -1,24 +1,20 @@
 import fetch from 'node-fetch'
 
-/* ======================== CONFIGURACIÓN ======================== */
+/* ======================== CONFIG ======================== */
 const CONFIG = {
-  API_URL: 'https://api-sky.ultraplus.click/facebook',
-  API_KEY: 'sk_5242a5e0-e6b2-41b0-a9f2-7479fc8a60e0',
-
-  FALLBACK_API_BASE: 'https://api-nv.ultraplus.click',
-  FALLBACK_API_KEY: 'RrSyVm056GfAhjuM',
+  API_BASE: 'https://api-nv.ultraplus.click/api/dl/facebook',
+  API_KEY: 'RrSyVm056GfAhjuM',
 
   MAX_FILE_SIZE: 200 * 1024 * 1024,
-  FETCH_TIMEOUT: 60_000,
   RATE_LIMIT_WINDOW: 60_000,
   MAX_REQUESTS_PER_WINDOW: 5
 }
 
-/* ======================== ESTADO ======================== */
+/* ======================== STATE ======================== */
 const activeDownloads = new Set()
 const rateLimitMap = new Map()
 
-/* ======================== UTILIDADES ======================== */
+/* ======================== UTILS ======================== */
 function isValidFacebookUrl(url) {
   return /(?:facebook\.com|fb\.watch)/i.test(url)
 }
@@ -53,12 +49,12 @@ function checkRateLimit(userId) {
   user.count++
 }
 
-/* ======================== API FALLBACK ======================== */
-async function fetchFacebookMediaFallback(url) {
-  const u = new URL('/api/dl/facebook', CONFIG.FALLBACK_API_BASE)
+/* ======================== FETCH MEDIA ======================== */
+async function fetchFacebookMedia(url) {
+  const u = new URL(CONFIG.API_BASE)
   u.search = new URLSearchParams({
     url,
-    key: CONFIG.FALLBACK_API_KEY
+    key: CONFIG.API_KEY
   })
 
   const res = await fetch(u.toString(), {
@@ -66,12 +62,12 @@ async function fetchFacebookMediaFallback(url) {
   })
 
   if (!res.ok) {
-    throw new Error(`Fallback HTTP ${res.status}`)
+    throw new Error(`HTTP ${res.status}`)
   }
 
   const data = await res.json()
   if (!data.status) {
-    throw new Error('Fallback sin resultados')
+    throw new Error('No se pudo obtener el video')
   }
 
   const video =
@@ -80,7 +76,7 @@ async function fetchFacebookMediaFallback(url) {
     data.result.url
 
   if (!video) {
-    throw new Error('Fallback: video no encontrado')
+    throw new Error('Video no disponible')
   }
 
   return {
@@ -91,50 +87,7 @@ async function fetchFacebookMediaFallback(url) {
   }
 }
 
-/* ======================== API PRINCIPAL ======================== */
-async function fetchFacebookMedia(url) {
-  try {
-    const res = await fetch(CONFIG.API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': CONFIG.API_KEY,
-        'User-Agent': 'Mozilla/5.0 (Android 10)'
-      },
-      body: JSON.stringify({ url })
-    })
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`)
-    }
-
-    const data = await res.json()
-    if (!data.status) {
-      throw new Error('API principal sin resultados')
-    }
-
-    const media =
-      data.result.media.video_hd ||
-      data.result.media.video_sd
-
-    if (!media) {
-      throw new Error('Video no encontrado')
-    }
-
-    return {
-      title: data.result.title,
-      duration: data.result.duration,
-      thumbnail: data.result.thumbnail,
-      url: media
-    }
-
-  } catch (e) {
-    // 🔁 fallback automático
-    return await fetchFacebookMediaFallback(url)
-  }
-}
-
-/* ======================== DESCARGA ======================== */
+/* ======================== DOWNLOAD ======================== */
 async function downloadToBuffer(url) {
   const res = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Android 10)' }
