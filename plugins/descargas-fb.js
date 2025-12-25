@@ -49,57 +49,32 @@ function checkRateLimit(userId) {
   user.count++
 }
 
-/* ======================== FETCH MEDIA ======================== */
-async function fetchFacebookMedia(url) {
+/* ======================== FETCH VIDEO STREAM ======================== */
+async function fetchFacebookVideoStream(fbUrl) {
   const u = new URL(CONFIG.API_BASE)
   u.search = new URLSearchParams({
-    url,
+    url: fbUrl,
     key: CONFIG.API_KEY
   })
 
   const res = await fetch(u.toString(), {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Android 10)' }
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Android 10)'
+    }
   })
 
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`)
   }
 
-  const data = await res.json()
-  if (!data.status) {
-    throw new Error('No se pudo obtener el video')
-  }
-
-  const video =
-    data.result.video_hd ||
-    data.result.video_sd ||
-    data.result.url
-
-  if (!video) {
-    throw new Error('Video no disponible')
-  }
-
-  return {
-    title: data.result.title || 'Facebook Video',
-    duration: data.result.duration || 'Desconocido',
-    thumbnail: data.result.thumbnail,
-    url: video
-  }
-}
-
-/* ======================== DOWNLOAD ======================== */
-async function downloadToBuffer(url) {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Android 10)' }
-  })
-
-  if (!res.ok) {
-    throw new Error(`Error descargando: HTTP ${res.status}`)
+  const type = res.headers.get('content-type') || ''
+  if (!type.includes('video')) {
+    throw new Error('La API no devolvió un video')
   }
 
   const size = parseInt(res.headers.get('content-length') || '0', 10)
 
-  if (size > CONFIG.MAX_FILE_SIZE) {
+  if (size && size > CONFIG.MAX_FILE_SIZE) {
     throw new Error(`Archivo demasiado grande (${formatFileSize(size)})`)
   }
 
@@ -121,9 +96,9 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
       )
     }
 
-    const url = args[0].trim()
+    const fbUrl = args[0].trim()
 
-    if (!isValidFacebookUrl(url)) {
+    if (!isValidFacebookUrl(fbUrl)) {
       return m.reply('⚠️ El enlace no es válido de Facebook')
     }
 
@@ -136,31 +111,24 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     activeDownloads.add(m.sender)
     await m.react('🔍')
 
-    const waitMsg = await m.reply('🔎 Buscando video en Facebook...')
+    const waitMsg = await m.reply('🔎 Descargando video desde Facebook...')
 
-    const media = await fetchFacebookMedia(url)
+    const { buffer, size } = await fetchFacebookVideoStream(fbUrl)
 
-    await conn.sendMessage(m.chat, {
-      text:
-        `📥 Descargando...\n\n` +
-        `📌 ${media.title}\n` +
-        `⏱️ ${media.duration}s`,
-      edit: waitMsg.key
-    })
-
-    const { buffer, size } = await downloadToBuffer(media.url)
-
-    await conn.sendMessage(m.chat, {
-      video: buffer,
-      mimetype: 'video/mp4',
-      fileName: `facebook_${Date.now()}.mp4`,
-      caption:
-        `╔══════════════════╗\n` +
-        `║  ✅ DESCARGA LISTA  ║\n` +
-        `╚══════════════════╝\n\n` +
-        `📹 ${media.title}\n` +
-        `💾 ${formatFileSize(size)}`
-    }, { quoted: m })
+    await conn.sendMessage(
+      m.chat,
+      {
+        video: buffer,
+        mimetype: 'video/mp4',
+        fileName: `facebook_${Date.now()}.mp4`,
+        caption:
+          `╔══════════════════╗\n` +
+          `║  ✅ DESCARGA LISTA  ║\n` +
+          `╚══════════════════╝\n\n` +
+          `💾 Tamaño: ${formatFileSize(size)}`
+      },
+      { quoted: m }
+    )
 
     await conn.sendMessage(m.chat, { delete: waitMsg.key })
     await m.react('✅')
