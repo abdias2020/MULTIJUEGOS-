@@ -55,14 +55,7 @@ class Copilot {
       const response = { text: '' }
 
       ws.on('open', () => {
-        ws.send(
-          JSON.stringify({
-            event: 'setOptions',
-            supportedFeatures: [],
-            supportedCards: []
-          })
-        )
-
+        ws.send(JSON.stringify({ event: 'setOptions' }))
         ws.send(
           JSON.stringify({
             event: 'send',
@@ -104,14 +97,6 @@ class Copilot {
 const handler = async (m, { conn, text, usedPrefix, command }) => {
   const username = m.pushName || 'Usuario'
 
-  if (!text && command !== 'ia') {
-    return m.reply(
-      `👋 Hola *${username}*\n\n` +
-        `Escribe una pregunta para usar la IA.\n\n` +
-        `*Ejemplo:*\n${usedPrefix + command} Recomienda películas de acción`
-    )
-  }
-
   const formatForWhatsApp = txt =>
     txt
       .replace(/\\([!?.,"'])/g, '$1')
@@ -121,6 +106,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
       .replace(/\n{3,}/g, '\n\n')
       .trim()
 
+  /* ======================== CHATGPT NV (FIX REAL) ======================== */
   async function chatgptNV (prompt) {
     const u = new URL('/api/ai/chatgpt', NV_CHATGPT_BASE)
     u.search = new URLSearchParams({
@@ -129,24 +115,27 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
     })
 
     const r = await fetch(u.toString())
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+
     const data = await r.json()
-    return data.result || data.response || data.message
+
+    if (!data.status) throw new Error('La API NV respondió con error')
+    if (!data.txt) throw new Error('Respuesta vacía de ChatGPT')
+
+    return data.txt
   }
 
   if (command === 'ia' && !text) {
     return m.reply(
       `🤖 *¿Qué IA deseas usar?*\n\n` +
-        `1️⃣ ChatGPT\n` +
-        `2️⃣ Gemini\n` +
-        `3️⃣ Copilot\n\n` +
-        `👉 Ejemplo:\n${usedPrefix}ia copilot Explícame Node.js`
+      `1️⃣ ChatGPT\n2️⃣ Gemini\n3️⃣ Copilot\n\n` +
+      `👉 Ejemplo:\n${usedPrefix}ia chatgpt Hola`
     )
   }
 
   if (command === 'ia') {
     const [iaType, ...rest] = text.split(' ')
     const prompt = rest.join(' ').trim()
-
     if (!prompt) return m.reply('❌ Escribe una pregunta válida')
 
     await conn.sendPresenceUpdate('composing', m.chat)
@@ -168,9 +157,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
               { image: { url: img }, caption: '🖼️ Imagen generada por Gemini' },
               { quoted: m }
             )
-            try {
-              fs.unlinkSync(img)
-            } catch {}
+            try { fs.unlinkSync(img) } catch {}
           }
         }
         return
@@ -178,7 +165,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 
       if (/^(copilot|bing)$/i.test(iaType)) {
         const copilot = new Copilot()
-        const res = await copilot.chat(prompt, { model: 'default' })
+        const res = await copilot.chat(prompt)
         return m.reply(formatForWhatsApp(res.text))
       }
 
@@ -196,13 +183,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 }
 
 /* ======================== METADATA ======================== */
-handler.help = [
-  'ia',
-  'chatgpt',
-  'gemini',
-  'copilot',
-  'blackbox'
-]
+handler.help = ['ia', 'chatgpt', 'gemini', 'copilot', 'blackbox']
 handler.tags = ['buscadores']
 handler.command = /^(ia|chatgpt|gemini|copilot|bing|blackbox)$/i
 
