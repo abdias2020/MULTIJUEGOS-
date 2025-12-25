@@ -3,8 +3,12 @@ import fetch from 'node-fetch'
 /* ======================== CONFIGURACIÓN ======================== */
 const CONFIG = {
   API_URL: 'https://api-sky.ultraplus.click/facebook',
-  API_KEY: 'sk_5242a5e0-e6b2-41b0-a9f2-7479fc8a60e0', // <-- TU API KEY
-  MAX_FILE_SIZE: 200 * 1024 * 1024, // 200MB
+  API_KEY: 'sk_5242a5e0-e6b2-41b0-a9f2-7479fc8a60e0',
+
+  FALLBACK_API_BASE: 'https://api-nv.ultraplus.click',
+  FALLBACK_API_KEY: 'RrSyVm056GfAhjuM',
+
+  MAX_FILE_SIZE: 200 * 1024 * 1024,
   FETCH_TIMEOUT: 60_000,
   RATE_LIMIT_WINDOW: 60_000,
   MAX_REQUESTS_PER_WINDOW: 5
@@ -49,41 +53,84 @@ function checkRateLimit(userId) {
   user.count++
 }
 
-/* ======================== API ULTRAPLUS ======================== */
-async function fetchFacebookMedia(url) {
-  const res = await fetch(CONFIG.API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': CONFIG.API_KEY,
-      'User-Agent': 'Mozilla/5.0 (Android 10)'
-    },
-    body: JSON.stringify({ url })
+/* ======================== API FALLBACK ======================== */
+async function fetchFacebookMediaFallback(url) {
+  const u = new URL('/api/dl/facebook', CONFIG.FALLBACK_API_BASE)
+  u.search = new URLSearchParams({
+    url,
+    key: CONFIG.FALLBACK_API_KEY
+  })
+
+  const res = await fetch(u.toString(), {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Android 10)' }
   })
 
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
+    throw new Error(`Fallback HTTP ${res.status}`)
   }
 
   const data = await res.json()
-
   if (!data.status) {
-    throw new Error(data.message || 'No se pudo obtener el video')
+    throw new Error('Fallback sin resultados')
   }
 
-  const media =
-    data.result.media.video_hd ||
-    data.result.media.video_sd
+  const video =
+    data.result.video_hd ||
+    data.result.video_sd ||
+    data.result.url
 
-  if (!media) {
-    throw new Error('No se encontró el video')
+  if (!video) {
+    throw new Error('Fallback: video no encontrado')
   }
 
   return {
-    title: data.result.title,
-    duration: data.result.duration,
+    title: data.result.title || 'Facebook Video',
+    duration: data.result.duration || 'Desconocido',
     thumbnail: data.result.thumbnail,
-    url: media
+    url: video
+  }
+}
+
+/* ======================== API PRINCIPAL ======================== */
+async function fetchFacebookMedia(url) {
+  try {
+    const res = await fetch(CONFIG.API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': CONFIG.API_KEY,
+        'User-Agent': 'Mozilla/5.0 (Android 10)'
+      },
+      body: JSON.stringify({ url })
+    })
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`)
+    }
+
+    const data = await res.json()
+    if (!data.status) {
+      throw new Error('API principal sin resultados')
+    }
+
+    const media =
+      data.result.media.video_hd ||
+      data.result.media.video_sd
+
+    if (!media) {
+      throw new Error('Video no encontrado')
+    }
+
+    return {
+      title: data.result.title,
+      duration: data.result.duration,
+      thumbnail: data.result.thumbnail,
+      url: media
+    }
+
+  } catch (e) {
+    // 🔁 fallback automático
+    return await fetchFacebookMediaFallback(url)
   }
 }
 
