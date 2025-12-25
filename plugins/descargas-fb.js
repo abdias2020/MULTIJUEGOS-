@@ -1,90 +1,45 @@
+import cheerio from 'cheerio'
 import fetch from 'node-fetch'
 
-/* ======================== CONFIG ======================== */
-const CONFIG = {
-  API_BASE: 'https://api-nv.ultraplus.click/api/dl/facebook',
-  API_KEY: 'RrSyVm056GfAhjuM',
+/* ======================== FACEBOOK SCRAPER ======================== */
+async function facebookDl(url) {
+  const res = await fetch('https://fdownloader.net/')
+  const html = await res.text()
+  const $ = cheerio.load(html)
 
-  MAX_FILE_SIZE: 200 * 1024 * 1024,
-  RATE_LIMIT_WINDOW: 60_000,
-  MAX_REQUESTS_PER_WINDOW: 5
-}
+  const token = $('input[name="__RequestVerificationToken"]').attr('value')
+  if (!token) throw new Error('No se pudo obtener token')
 
-/* ======================== STATE ======================== */
-const activeDownloads = new Set()
-const rateLimitMap = new Map()
-
-/* ======================== UTILS ======================== */
-function isValidFacebookUrl(url) {
-  return /(?:facebook\.com|fb\.watch)/i.test(url)
-}
-
-function formatFileSize(bytes) {
-  if (!bytes) return 'Desconocido'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let i = 0
-  while (bytes >= 1024 && i < units.length - 1) {
-    bytes /= 1024
-    i++
-  }
-  return `${bytes.toFixed(2)} ${units[i]}`
-}
-
-function checkRateLimit(userId) {
-  const now = Date.now()
-  const user = rateLimitMap.get(userId)
-
-  if (!user || now > user.reset) {
-    rateLimitMap.set(userId, {
-      count: 1,
-      reset: now + CONFIG.RATE_LIMIT_WINDOW
-    })
-    return
-  }
-
-  if (user.count >= CONFIG.MAX_REQUESTS_PER_WINDOW) {
-    throw new Error('⏳ Demasiadas solicitudes, espera un momento')
-  }
-
-  user.count++
-}
-
-/* ======================== FETCH VIDEO STREAM ======================== */
-async function fetchFacebookVideoStream(fbUrl) {
-  const u = new URL(CONFIG.API_BASE)
-  u.search = new URLSearchParams({
-    url: fbUrl,
-    key: CONFIG.API_KEY
-  })
-
-  const res = await fetch(u.toString(), {
+  const response = await fetch('https://fdownloader.net/api/ajaxSearch', {
+    method: 'POST',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Android 10)'
-    }
+      cookie: res.headers.get('set-cookie'),
+      'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      referer: 'https://fdownloader.net/'
+    },
+    body: new URLSearchParams({
+      __RequestVerificationToken: token,
+      q: url
+    })
   })
 
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
+  const json = await response.json()
+  if (!json?.data) throw new Error('No se pudo procesar el video')
+
+  const $$ = cheerio.load(json.data)
+  const result = {}
+
+  $$('.button.is-success.is-small.download-link-fb').each(function () {
+    const quality = $$(this).attr('title')?.split(' ')[1] // HD / SD
+    const link = $$(this).attr('href')
+    if (quality && link) result[quality] = link
+  })
+
+  if (!Object.keys(result).length) {
+    throw new Error('No se encontraron enlaces')
   }
 
-  const type = res.headers.get('content-type') || ''
-  if (!type.includes('video')) {
-    throw new Error('La API no devolvió un video')
-  }
-
-  const size = parseInt(res.headers.get('content-length') || '0', 10)
-
-  if (size && size > CONFIG.MAX_FILE_SIZE) {
-    throw new Error(`Archivo demasiado grande (${formatFileSize(size)})`)
-  }
-
-  const chunks = []
-  for await (const chunk of res.body) chunks.push(chunk)
-
-  return {
-    buffer: Buffer.concat(chunks),
-    size
-  }
+  return result
 }
 
 /* ======================== HANDLER ======================== */
@@ -97,35 +52,28 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     }
 
     const fbUrl = args[0].trim()
-
-    if (!isValidFacebookUrl(fbUrl)) {
-      return m.reply('⚠️ El enlace no es válido de Facebook')
+    if (!/(facebook\.com|fb\.watch)/i.test(fbUrl)) {
+      return m.reply('⚠️ Enlace de Facebook inválido')
     }
 
-    checkRateLimit(m.sender)
-
-    if (activeDownloads.has(m.sender)) {
-      return m.reply('⏳ Ya tienes una descarga en progreso')
-    }
-
-    activeDownloads.add(m.sender)
     await m.react('🔍')
+    const waitMsg = await m.reply('🔎 Buscando video de Facebook...')
 
-    const waitMsg = await m.reply('🔎 Descargando video desde Facebook...')
+    const links = await facebookDl(fbUrl)
 
-    const { buffer, size } = await fetchFacebookVideoStream(fbUrl)
+    const videoUrl = links.HD || links.SD
+    if (!videoUrl) throw new Error('No hay video disponible')
 
     await conn.sendMessage(
       m.chat,
       {
-        video: buffer,
+        video: { url: videoUrl },
         mimetype: 'video/mp4',
-        fileName: `facebook_${Date.now()}.mp4`,
         caption:
           `╔══════════════════╗\n` +
-          `║  ✅ DESCARGA LISTA  ║\n` +
+          `║  ✅ FACEBOOK LISTO  ║\n` +
           `╚══════════════════╝\n\n` +
-          `💾 Tamaño: ${formatFileSize(size)}`
+          `🎥 Calidad: ${links.HD ? 'HD' : 'SD'}`
       },
       { quoted: m }
     )
@@ -136,8 +84,6 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
   } catch (e) {
     await m.reply(`❌ Error:\n${e.message}`)
     await m.react('❌')
-  } finally {
-    activeDownloads.delete(m.sender)
   }
 }
 
@@ -146,6 +92,5 @@ handler.help = ['facebook <url>']
 handler.tags = ['downloader']
 handler.command = /^(facebook|fb|fbdl)$/i
 handler.limit = 1
-handler.register = true
 
 export default handler
