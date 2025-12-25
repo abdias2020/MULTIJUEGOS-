@@ -4,7 +4,8 @@ import path from 'path';
 import axios from 'axios';
 import { blackboxAi, exoml, perplexity } from '../lib/scraper.js';
 import { db } from '../lib/postgres.js';
- 
+import { ask as geminiAsk, askForImages as geminiAskImages } from '../lib/gemini-scraper.js';
+
 const handler = async (m, {conn, text, usedPrefix, command}) => {
 let username = m.pushName 
 if (!text) return m.reply(`*Hola cómo esta 😊, El que te puedo ayudar?*, ingrese una petición o orden para usar la función de chagpt\n*Ejemplo:*\n${usedPrefix + command} Recomienda un top 10 de películas de acción`) 
@@ -27,7 +28,6 @@ console.error("❌ Error obteniendo prompt o TTL:", e.message);
 if (!systemPrompt) {
 try {
 systemPrompt = await fetch('https://raw.githubusercontent.com/elrebelde21/LoliBot-MD/main/src/text-chatgpt.txt').then(r => r.text());
-//await fetch('https://raw.githubusercontent.com/Skidy89/chat-gpt-jailbreak/main/Text.txt').then(r => r.text());
 } catch {
 systemPrompt = syms1; 
 }}
@@ -83,7 +83,6 @@ console.error("❌ No se pudo guardar memoria:", e.message);
 }
 const formatted = formatForWhatsApp(result)
 return await m.reply(formatted)
-//await m.reply(result);
 }
 
 if (command == 'openai'  || command == 'chatgpt2') {
@@ -99,7 +98,6 @@ let gpt = await fetch(`${info.apis}/ia/gptweb?text=${text}`)
 let res = await gpt.json()
 const formatted = formatForWhatsApp(res.gpt)
 await m.reply(formatted)
-//await m.reply(res.gpt)
 } catch {
 try {
 let gpt = await fetch(`${info.apis}/api/ia2?text=${text}`)
@@ -126,7 +124,37 @@ await m.reply('❌ Error al consultar DeepSeek API.');
 }}
 
 if (command == 'gemini') {
-await conn.sendPresenceUpdate('composing', m.chat)
+await conn.sendPresenceUpdate('composing', m.chat);
+
+try {
+// Usar el scraper de Gemini sin memoria persistente
+const result = await geminiAskImages(text, null);
+const formatted = formatForWhatsApp(result.text);
+
+// Enviar respuesta de texto
+await m.reply(formatted);
+
+// Si hay imágenes generadas, enviarlas
+if (result.savedFiles && result.savedFiles.length > 0) {
+for (const imgPath of result.savedFiles) {
+try {
+await conn.sendMessage(m.chat, { 
+image: { url: imgPath },
+caption: '🖼️ Imagen generada por Gemini'
+}, { quoted: m });
+// Eliminar archivo después de enviar para no llenar el servidor
+try {
+fs.unlinkSync(imgPath);
+} catch {}
+} catch (e) {
+console.error("Error enviando imagen:", e);
+}
+}
+}
+
+} catch (error) {
+console.error('Error Gemini (scraper):', error);
+// Fallback a APIs antiguas
 try {
 let gpt = await fetch(`https://api.dorratz.com/ai/gemini?prompt=${text}`)
 let res = await gpt.json()
@@ -137,7 +165,9 @@ let gpt = await fetch(`https://delirius-apiofc.vercel.app/ia/gemini?query=${text
 let res = await gpt.json()
 await m.reply(res.message)
 } catch {
+await m.reply('❌ Error al consultar Gemini.');
 }}}
+}
 
 if (command === 'blackbox') {
 const result = await blackboxAi(text);
@@ -153,14 +183,13 @@ let res = await gpt.json()
 await conn.sendMessage(m.chat, { text: res.result.ai_response, contextInfo: {
 externalAdReply: {
 title: "[ IA COPILOT ]",
-body: "LoliBot",
+body: "MUTLIJUEGOS BOT",
 thumbnailUrl: "https://qu.ax/nTDgf.jpg", 
 sourceUrl: "https://api.dorratz.com",
 mediaType: 1,
 showAdAttribution: false,
 renderLargerThumbnail: false
 }}}, { quoted: m })
-//m.reply(res.result.ai_response)
 } catch {
 try {
 let gpt = await fetch(`${info.apis}/ia/bingia?query=${text}`)
@@ -168,6 +197,7 @@ let res = await gpt.json()
 await m.reply(res.message)
 } catch {
 }}}}
+
 handler.help = ["chagpt", "ia", "openai", "gemini", "copilot", "blackbox", "deepseek"]
 handler.tags = ["buscadores"]
 handler.command = /^(openai|chatgpt|ia|ai|openai2|chatgpt2|ia2|gemini|copilot|bing|deepseek|blackbox)$/i;

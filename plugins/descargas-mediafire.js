@@ -3,9 +3,15 @@ import fetch from 'node-fetch';
 
 /* ======================== CONFIGURACIÓN ======================== */
 const CONFIG = {
-  MEDIAFIRE_API: 'https://api-sky.ultraplus.click/download/mediafire',
-  API_KEY: 'sk_5242a5e0-e6b2-41b0-a9f2-7479fc8a60e0',
-  MAX_FILE_SIZE: 500, // MB
+  // API principal actualizada
+  MEDIAFIRE_API: 'https://api-nv.ultraplus.click/api/download/mediafire',
+  API_KEY: 'RrSyVm056GfAhjuM',
+  
+  // API de respaldo
+  MEDIAFIRE_API_BACKUP: 'https://api-sky.ultraplus.click/download/mediafire',
+  API_KEY_BACKUP: 'sk_5242a5e0-e6b2-41b0-a9f2-7479fc8a60e0',
+  
+  MAX_FILE_SIZE: 1000, // MB
   TIMEOUT: 30000,
   STICKER_ERROR: 'https://qu.ax/Wdsb.webp'
 };
@@ -20,7 +26,7 @@ function isValidMediaFireUrl(url) {
 }
 
 function formatFileSize(sizeStr) {
-  // Si ya viene formateado (ej: "21.63MB"), retornarlo
+  // Si ya viene formateado (ej: "170.61MB"), retornarlo limpio
   if (typeof sizeStr === 'string' && /\d+(\.\d+)?\s*(MB|GB|KB|B)/i.test(sizeStr)) {
     return sizeStr.replace('File ', '').trim();
   }
@@ -40,7 +46,7 @@ function formatFileSize(sizeStr) {
 function extractSizeInMB(sizeStr) {
   if (!sizeStr) return 0;
   
-  // Extraer números del string
+  // Extraer números del string (ej: "170.61MB" -> 170.61)
   const match = sizeStr.toString().match(/(\d+(?:\.\d+)?)\s*(MB|GB|KB|B)?/i);
   if (!match) return 0;
   
@@ -81,16 +87,79 @@ function cleanFileName(filename) {
   return cleaned.trim();
 }
 
-async function downloadMediaFireNew(url) {
+/* ======================== API ULTRAPLUS (NUEVA) ======================== */
+
+async function downloadMediaFireUltraPlus(url) {
   try {
-    console.log(`🔍 Procesando MediaFire: ${url}`);
+    console.log(`🔍 Procesando con API UltraPlus: ${url}`);
+    
+    // Construir URL con URLSearchParams
+    const apiUrl = new URL('/api/download/mediafire', 'https://api-nv.ultraplus.click');
+    apiUrl.search = new URLSearchParams({
+      url: url,
+      key: CONFIG.API_KEY
+    });
+
+    console.log(`📡 Llamando a: ${apiUrl.toString()}`);
+
+    const response = await fetch(apiUrl.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      timeout: CONFIG.TIMEOUT
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    console.log('📦 Respuesta recibida:', JSON.stringify(data, null, 2));
+
+    if (!data.status || !data.result) {
+      throw new Error('Respuesta inválida de la API');
+    }
+
+    const result = data.result;
+
+    if (!result.url || !result.fileName) {
+      throw new Error('Datos incompletos en la respuesta');
+    }
+
+    console.log(`✅ Archivo encontrado: ${result.fileName} (${result.fileSize})`);
+
+    return {
+      filename: cleanFileName(result.fileName),
+      filesize: formatFileSize(result.fileSize),
+      download: result.url,
+      mimetype: result.fileName.endsWith('.apk') ? 'application/vnd.android.package-archive' :
+                result.fileName.endsWith('.pdf') ? 'application/pdf' :
+                result.fileName.endsWith('.zip') ? 'application/zip' :
+                result.fileName.endsWith('.rar') ? 'application/x-rar-compressed' :
+                'application/octet-stream'
+    };
+
+  } catch (error) {
+    console.error('❌ Error en API UltraPlus:', error.message);
+    throw error;
+  }
+}
+
+/* ======================== API ULTRAPLUS BACKUP (SKY) ======================== */
+
+async function downloadMediaFireUltraPlusBackup(url) {
+  try {
+    console.log(`🔄 Intentando con API UltraPlus Backup (Sky)...`);
     
     const response = await axios.post(
-      CONFIG.MEDIAFIRE_API,
+      CONFIG.MEDIAFIRE_API_BACKUP,
       { url: url },
       {
         headers: {
-          'apikey': CONFIG.API_KEY,
+          'apikey': CONFIG.API_KEY_BACKUP,
           'Content-Type': 'application/json'
         },
         timeout: CONFIG.TIMEOUT
@@ -100,32 +169,34 @@ async function downloadMediaFireNew(url) {
     const data = response.data;
 
     if (!data.status || !data.result || !data.result.files || data.result.files.length === 0) {
-      throw new Error('No se encontraron archivos en MediaFire');
+      throw new Error('No se encontraron archivos');
     }
 
     const file = data.result.files[0];
 
-    console.log(`✅ Archivo encontrado: ${file.name}`);
+    console.log(`✅ Archivo encontrado con backup: ${file.name}`);
 
     return {
       filename: cleanFileName(file.name),
       filesize: formatFileSize(file.size),
       download: file.download,
-      proxy: file.proxy, // URL proxy alternativa
-      total: data.result.total
+      proxy: file.proxy,
+      mimetype: 'application/octet-stream'
     };
 
   } catch (error) {
-    console.error('❌ Error en MediaFire API principal:', error.message);
+    console.error('❌ Error en API UltraPlus Backup:', error.message);
     throw error;
   }
 }
 
-// APIs de respaldo
-async function downloadMediaFireBackup(url) {
+/* ======================== APIs DE RESPALDO EXTERNAS ======================== */
+
+async function downloadMediaFireFallback(url) {
   const backupAPIs = [
     // API 1: Delirius Vercel
     async () => {
+      console.log('🔄 Probando API Delirius...');
       const res = await fetch(`https://delirius-apiofc.vercel.app/download/mediafire?url=${encodeURIComponent(url)}`);
       if (!res.ok) throw new Error(`Error API Delirius: ${res.status}`);
       const json = await res.json();
@@ -140,6 +211,7 @@ async function downloadMediaFireBackup(url) {
     
     // API 2: Neoxr
     async () => {
+      console.log('🔄 Probando API Neoxr...');
       const res = await fetch(`https://api.neoxr.eu/api/mediafire?url=${url}&apikey=russellxz`);
       const data = await res.json();
       if (!data.status || !data.data) throw new Error('Error en Neoxr');
@@ -153,6 +225,7 @@ async function downloadMediaFireBackup(url) {
     
     // API 3: Agatz
     async () => {
+      console.log('🔄 Probando API Agatz...');
       const res = await fetch(`https://api.agatz.xyz/api/mediafire?url=${url}`);
       const data = await res.json();
       return { 
@@ -165,6 +238,7 @@ async function downloadMediaFireBackup(url) {
     
     // API 4: Siputzx
     async () => {
+      console.log('🔄 Probando API Siputzx...');
       const res = await fetch(`https://api.siputzx.my.id/api/d/mediafire?url=${url}`);
       const data = await res.json();
       const file = data.data[0];
@@ -181,7 +255,7 @@ async function downloadMediaFireBackup(url) {
     try {
       const result = await api();
       if (result && result.download) {
-        console.log(`✅ Descarga exitosa con API de respaldo`);
+        console.log(`✅ Descarga exitosa con API de respaldo externa`);
         return result;
       }
     } catch (error) {
@@ -193,7 +267,49 @@ async function downloadMediaFireBackup(url) {
   throw new Error('Todas las APIs de respaldo fallaron');
 }
 
-function generateCaption(file, version = '1.0') {
+/* ======================== FUNCIÓN PRINCIPAL DE DESCARGA ======================== */
+
+async function downloadMediaFire(url) {
+  let lastError = null;
+
+  // 1️⃣ Intentar con API UltraPlus principal (NV)
+  try {
+    return await downloadMediaFireUltraPlus(url);
+  } catch (error) {
+    console.log(`⚠️ API principal falló: ${error.message}`);
+    lastError = error;
+  }
+
+  // 2️⃣ Intentar con API UltraPlus backup (Sky)
+  try {
+    return await downloadMediaFireUltraPlusBackup(url);
+  } catch (error) {
+    console.log(`⚠️ API backup falló: ${error.message}`);
+    lastError = error;
+  }
+
+  // 3️⃣ Intentar con APIs externas de respaldo
+  try {
+    return await downloadMediaFireFallback(url);
+  } catch (error) {
+    console.log(`⚠️ APIs de respaldo fallaron: ${error.message}`);
+    lastError = error;
+  }
+
+  // Si todas fallaron
+  throw new Error(
+    `No se pudo descargar el archivo después de intentar con todas las APIs.\n\n` +
+    `Posibles causas:\n` +
+    `• El enlace ha expirado\n` +
+    `• El archivo fue eliminado\n` +
+    `• MediaFire está bloqueando el acceso\n\n` +
+    `*Último error:* ${lastError.message}`
+  );
+}
+
+/* ======================== GENERADOR DE CAPTION ======================== */
+
+function generateCaption(file) {
   return `╔═══════════════════════╗
 ║  📁 MEDIAFIRE DOWNLOAD  ║
 ╚═══════════════════════╝
@@ -252,30 +368,9 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
   await m.react("🔍");
 
   try {
-    let fileData = null;
-
-    // Intentar con la API principal (Nueva API)
-    try {
-      console.log('🚀 Intentando con API principal...');
-      fileData = await downloadMediaFireNew(args[0]);
-    } catch (error) {
-      console.log(`⚠️ API principal falló: ${error.message}`);
-      console.log('🔄 Intentando con APIs de respaldo...');
-      
-      // Si falla, intentar con APIs de respaldo
-      try {
-        fileData = await downloadMediaFireBackup(args[0]);
-      } catch (backupError) {
-        throw new Error(
-          `No se pudo descargar el archivo.\n\n` +
-          `Posibles causas:\n` +
-          `• El enlace ha expirado\n` +
-          `• El archivo fue eliminado\n` +
-          `• MediaFire está bloqueando el acceso\n\n` +
-          `*Error:* ${backupError.message}`
-        );
-      }
-    }
+    // Descargar usando la función principal con fallback automático
+    console.log('🚀 Iniciando descarga...');
+    const fileData = await downloadMediaFire(args[0]);
 
     if (!fileData || !fileData.download) {
       throw new Error('No se pudo obtener el enlace de descarga');
@@ -325,9 +420,9 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
       await m.react('✅');
 
     } catch (sendError) {
-      console.error('Error enviando archivo:', sendError);
+      console.error('❌ Error enviando archivo:', sendError);
       
-      // Si falla el envío, intentar con la URL proxy si está disponible
+      // Si falla el envío y hay proxy, intentar con proxy
       if (fileData.proxy) {
         console.log('🔄 Intentando con URL proxy...');
         await conn.sendMessage(

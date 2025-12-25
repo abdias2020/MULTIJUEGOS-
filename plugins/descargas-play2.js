@@ -16,7 +16,26 @@ const AudioAPIs = [
     name: 'SaveTube',
     download: async (url) => {
       const result = await savetube.download(url, 'mp3')
-      return { url: result.result.download, title: result.result.title }
+      if (!result.status) throw new Error(result.error)
+      return { 
+        url: result.result.download, 
+        title: result.result.title,
+        duration: result.result.duration,
+        thumbnail: result.result.thumbnail
+      }
+    }
+  },
+  {
+    name: 'SaveTube-M4A',
+    download: async (url) => {
+      const result = await savetube.download(url, 'm4a')
+      if (!result.status) throw new Error(result.error)
+      return { 
+        url: result.result.download, 
+        title: result.result.title,
+        duration: result.result.duration,
+        thumbnail: result.result.thumbnail
+      }
     }
   },
   {
@@ -207,33 +226,69 @@ const AudioAPIs = [
       const ress = await ytdl.chooseFormat(infoo.formats, { filter: 'audioonly' })
       return { url: ress.url, title: __res[0].title }
     }
-  },
-  {
-    name: 'YouTubeMP3',
-    download: async (url) => {
-      const res = await fetch(`https://www.yt-download.org/api/button/mp3/${encodeURIComponent(url)}`)
-      const data = await res.json()
-      if (data?.dlink) return { url: data.dlink }
-      throw new Error('YouTubeMP3 falló')
-    }
   }
 ]
 
-// 📦 APIs para VIDEO (18 APIs)
+// 📦 APIs para VIDEO (20+ APIs)
 const VideoAPIs = [
   {
-    name: 'SaveTube',
-    download: async (url, quality = '720') => {
-      const result = await savetube.download(url, quality)
+    name: 'SaveTube-360p',
+    download: async (url) => {
+      const result = await savetube.download(url, '360')
+      if (!result.status) throw new Error(result.error)
       return { 
         url: result.result.download, 
         title: result.result.title,
-        thumb: result.result.thumbnail 
+        thumb: result.result.thumbnail,
+        duration: result.result.duration,
+        quality: '360p'
       }
     }
   },
   {
-    name: 'OGMp3',
+    name: 'SaveTube-480p',
+    download: async (url) => {
+      const result = await savetube.download(url, '480')
+      if (!result.status) throw new Error(result.error)
+      return { 
+        url: result.result.download, 
+        title: result.result.title,
+        thumb: result.result.thumbnail,
+        duration: result.result.duration,
+        quality: '480p'
+      }
+    }
+  },
+  {
+    name: 'SaveTube-720p',
+    download: async (url) => {
+      const result = await savetube.download(url, '720')
+      if (!result.status) throw new Error(result.error)
+      return { 
+        url: result.result.download, 
+        title: result.result.title,
+        thumb: result.result.thumbnail,
+        duration: result.result.duration,
+        quality: '720p'
+      }
+    }
+  },
+  {
+    name: 'SaveTube-1080p',
+    download: async (url) => {
+      const result = await savetube.download(url, '1080')
+      if (!result.status) throw new Error(result.error)
+      return { 
+        url: result.result.download, 
+        title: result.result.title,
+        thumb: result.result.thumbnail,
+        duration: result.result.duration,
+        quality: '1080p'
+      }
+    }
+  },
+  {
+    name: 'OGMp3-Video',
     download: async (url, quality = '720') => {
       const res = await ogmp3.download(url, quality, 'video')
       if (res?.status && res?.result?.download) {
@@ -398,13 +453,6 @@ const VideoAPIs = [
       if (video720?.url) return { url: video720.url }
       throw new Error('YouTubeMP4 falló')
     }
-  },
-  {
-    name: 'YTDL-MP4',
-    download: async (url) => {
-      const result = await ytMp4(url)
-      return { url: result.result, title: result.title, thumb: result.thumb }
-    }
   }
 ]
 
@@ -444,7 +492,25 @@ async function downloadWithFallback(url, apis, quality = null) {
 // 📋 Obtener información del video
 async function getVideoInfo(url) {
   try {
-    // Intentar con yts primero
+    // Primero intentar con SaveTube para obtener info completa
+    const formats = await savetube.getAllFormats(url)
+    if (formats.status) {
+      return {
+        title: formats.result.title,
+        author: formats.result.author,
+        duration: formats.result.duration,
+        durationSeconds: formats.result.durationSeconds,
+        thumbnail: formats.result.thumbnail,
+        url: url,
+        videoId: formats.result.videoId
+      }
+    }
+  } catch (err) {
+    console.log('⚠️ SaveTube info falló, intentando con yts')
+  }
+
+  try {
+    // Intentar con yts
     const search = await yts(url)
     if (search?.videos?.[0]) {
       const video = search.videos[0]
@@ -477,6 +543,27 @@ async function getVideoInfo(url) {
     console.log('⚠️ ytdl-core también falló')
     return null
   }
+}
+
+// 🛠️ Utilidades
+function formatNumber(num) {
+  if (!num) return 'N/A'
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+  return num.toString()
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '0:00'
+  const hrs = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+  if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function sanitizeFilename(filename) {
+  return filename.replace(/[<>:"/\\|?*]/g, '').substring(0, 200)
 }
 
 // 🎯 Handler principal
@@ -558,9 +645,11 @@ const handler = async (m, { conn, text, args, usedPrefix, command }) => {
             externalAdReply: {
               title: result.title || videoInfo?.title || 'Audio descargado',
               body: `${videoInfo?.author || 'YouTube'} • Descargado con ${result.apiUsed}`,
-              thumbnailUrl: videoInfo?.thumbnail || 'https://i.ibb.co/ZKKSZHT/Picsart-23-06-24-13-36-01-843.jpg',
+              thumbnailUrl: result.thumbnail || videoInfo?.thumbnail || 'https://i.ibb.co/ZKKSZHT/Picsart-23-06-24-13-36-01-843.jpg',
               sourceUrl: youtubeLink,
-              mediaType: 2
+              mediaType: 2,
+              showAdAttribution: false,
+              renderLargerThumbnail: true
             }
           }
         }, { quoted: m })
@@ -600,12 +689,22 @@ const handler = async (m, { conn, text, args, usedPrefix, command }) => {
             `│ 🎬 *${result.title || videoInfo?.title || 'Video'}*\n` +
             `│\n` +
             `│ 👤 *Canal:* ${videoInfo?.author || 'Desconocido'}\n` +
-            `│ ⏱️ *Duración:* ${videoInfo?.duration || 'N/A'}\n` +
+            `│ ⏱️ *Duración:* ${result.duration || videoInfo?.duration || 'N/A'}\n` +
             `│ 👁️ *Vistas:* ${videoInfo?.views || 'N/A'}\n` +
+            `│ 📺 *Calidad:* ${result.quality || quality}p\n` +
             `│ ⚙️ *API:* ${result.apiUsed}\n` +
             `│\n` +
             `╰━━━━━━━━━━━━━━━━━━╯`,
-          thumbnail: result.thumb || videoInfo?.thumbnail
+          contextInfo: {
+            externalAdReply: {
+              title: result.title || videoInfo?.title || 'Video descargado',
+              body: `${videoInfo?.author || 'YouTube'} • ${result.quality || quality}p`,
+              thumbnailUrl: result.thumb || videoInfo?.thumbnail,
+              sourceUrl: youtubeLink,
+              mediaType: 1,
+              showAdAttribution: false
+            }
+          }
         }, { quoted: m })
 
         m.react('✅')
@@ -615,138 +714,52 @@ const handler = async (m, { conn, text, args, usedPrefix, command }) => {
     }
 
   } catch (error) {
-    console.error('❌ Error crítico:', error)
-    m.reply(
-      `🚫 *Error en la descarga*\n\n` +
-      `📋 *Detalles:* ${error.message}\n\n` +
-      `💡 *Soluciones:*\n` +
-      `• Verifica que el enlace de YouTube sea válido\n` +
-      `• Intenta con otro video\n` +
-      `• El video puede estar restringido o no disponible\n` +
-      `• Usa el comando *${usedPrefix}yts* para buscar primero\n\n` +
-      `_Si el problema persiste, contacta al desarrollador_`
-    )
+    console.error('❌ Error:', error)
     m.react('❌')
+    await m.reply(
+      `*❌ ERROR AL DESCARGAR*\n\n` +
+ `📝 *Detalles:* ${error.message}\n\n` +
+      `💡 *Posibles soluciones:*\n` +
+      `• Verifica que el enlace sea correcto\n` +
+      `• El video podría estar restringido\n` +
+      `• Intenta con otro formato o calidad\n` +
+      `• Prueba nuevamente en unos minutos\n\n` +
+      `_Si el problema persiste, contacta al administrador_`
+    )
   } finally {
     delete userRequests[m.sender]
   }
 }
 
-// ⚙️ Funciones auxiliares
-function formatNumber(n) {
-  if (!n) return '0'
-  const num = parseInt(n.toString().replace(/\D/g, ''))
-  if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B'
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
-  return num.toLocaleString('es-ES')
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return '0:00'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
-  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-function sanitizeFilename(name) {
-  return name.replace(/[\/\\?%*:|"<>]/g, '-').substring(0, 180)
-}
-
-function bytesToSize(bytes) {
-  return new Promise((resolve) => {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
-    if (bytes === 0) return resolve('n/a')
-    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10)
-    if (i === 0) resolve(`${bytes} ${sizes[i]}`)
-    resolve(`${(bytes / (1024 ** i)).toFixed(1)} ${sizes[i]}`)
-  })
-}
-
-async function ytMp3(url) {
-  return new Promise((resolve, reject) => {
-    ytdl.getInfo(url).then(async (getUrl) => {
-      let result = []
-      for (let i = 0; i < getUrl.formats.length; i++) {
-        let item = getUrl.formats[i]
-        if (item.mimeType === 'audio/webm; codecs="opus"') {
-          let { contentLength } = item
-          let bytes = await bytesToSize(contentLength)
-          result[i] = { audio: item.url, size: bytes }
-        }
-      }
-      let resultFix = result.filter(x => x.audio && x.size)
-      if (!resultFix[0]) return reject(new Error('No se encontró formato de audio'))
-      let tiny = await axios.get(`https://tinyurl.com/api-create.php?url=${resultFix[0].audio}`)
-      let tinyUrl = tiny.data
-      let title = getUrl.videoDetails.title
-      let thumb = getUrl.player_response.microformat.playerMicroformatRenderer.thumbnail.thumbnails[0].url
-      resolve({ title, result: tinyUrl, result2: resultFix, thumb })
-    }).catch(reject)
-  })
-}
-
-async function ytMp4(url) {
-  return new Promise(async (resolve, reject) => {
-    ytdl.getInfo(url).then(async (getUrl) => {
-      let result = []
-      for (let i = 0; i < getUrl.formats.length; i++) {
-        let item = getUrl.formats[i]
-        if (item.container === 'mp4' && item.hasVideo === true && item.hasAudio === true) {
-          let { qualityLabel, contentLength } = item
-          let bytes = await bytesToSize(contentLength)
-          result[i] = { video: item.url, quality: qualityLabel, size: bytes }
-        }
-      }
-      let resultFix = result.filter(x => x.video && x.size && x.quality)
-      if (!resultFix[0]) return reject(new Error('No se encontró formato de video'))
-      let tiny = await axios.get(`https://tinyurl.com/api-create.php?url=${resultFix[0].video}`)
-      let tinyUrl = tiny.data
-      let title = getUrl.videoDetails.title
-      let thumb = getUrl.player_response.microformat.playerMicroformatRenderer.thumbnail.thumbnails[0].url
-      resolve({ title, result: tinyUrl, result2: resultFix[0].video, thumb })
-    }).catch(reject)
-  })
-}
-
-async function ytPlay(query) {
-  return new Promise((resolve, reject) => {
-    yts(query).then(async (getData) => {
-      let result = getData.videos.slice(0, 5)
-      if (!result.length) return reject(new Error('No se encontraron resultados'))
-      let url = []
-      for (let i = 0; i < result.length; i++) {
-        url.push(result[i].url)
-      }
-      let random = url[0]
-      let getAudio = await ytMp3(random)
-      resolve(getAudio)
-    }).catch(reject)
-  })
-}
-
-async function ytPlayVid(query) {
-  return new Promise((resolve, reject) => {
-    yts(query).then(async (getData) => {
-      let result = getData.videos.slice(0, 5)
-      if (!result.length) return reject(new Error('No se encontraron resultados'))
-      let url = []
-      for (let i = 0; i < result.length; i++) {
-        url.push(result[i].url)
-      }
-      let random = url[0]
-      let getVideo = await ytMp4(random)
-      resolve(getVideo)
-    }).catch(reject)
-  })
-}
-
 // 📝 Configuración del comando
-handler.help = ['ytmp3 <url>', 'ytmp4 <url>']
+handler.help = ['ytmp3', 'ytmp4', 'ytmp3doc', 'ytmp4doc']
 handler.tags = ['downloader']
-handler.command = /^(ytmp3|ytmp4|fgmp4|fgmp3|dlmp3|ytmp4doc|ytmp3doc)$/i
-handler.limit = false
+handler.command = /^(ytmp3|ytmp4|ytmp3doc|ytmp4doc|yta|ytv)$/i
+handler.limit = true
+handler.register = false
 
 export default handler
+
+// 🎥 Función auxiliar para ytdl-core MP4 (si la necesitas)
+async function ytMp4(url) {
+  try {
+    const search = await yts(url)
+    const video = search.videos[0]
+    if (!video) throw new Error('Video no encontrado')
+    
+    const info = await ytdl.getInfo('https://youtu.be/' + video.videoId)
+    const format = ytdl.chooseFormat(info.formats, { 
+      quality: 'highestvideo',
+      filter: 'videoandaudio'
+    })
+    
+    return {
+      title: video.title,
+      thumb: video.thumbnail,
+      result: format.url,
+      quality: format.qualityLabel || '720p'
+    }
+  } catch (error) {
+    throw new Error(`ytMp4 falló: ${error.message}`)
+  }
+}
