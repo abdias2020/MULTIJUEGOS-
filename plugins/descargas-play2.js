@@ -33,7 +33,7 @@ async function downloadWithFallback(url, apis, quality = null) {
     }
   }
 
-  throw new Error(errors.slice(0, 3).join('\n'))
+  throw new Error(`Todas las APIs fallaron:\n${errors.slice(0, 3).join('\n')}`)
 }
 
 /* =======================
@@ -45,7 +45,7 @@ const AudioAPIs = [
     download: async (url) => {
       const r = await savetube.download(url, 'mp3')
       if (!r.status) throw new Error('SaveTube falló')
-      return r.result
+      return { url: r.result.download, title: r.result.title }
     }
   },
   {
@@ -60,6 +60,7 @@ const AudioAPIs = [
     name: 'YTDown',
     download: async (url) => {
       const r = await ytdown.download(url, 'mp3')
+      if (!r?.download) throw new Error('YTDown falló')
       return { url: r.download, title: r.title }
     }
   },
@@ -67,8 +68,12 @@ const AudioAPIs = [
     name: 'YTDL-Core',
     download: async (url) => {
       const info = await ytdl.getInfo(url)
-      const f = ytdl.chooseFormat(info.formats, { filter: 'audioonly' })
-      return { url: f.url, title: info.videoDetails.title }
+      const format = ytdl.chooseFormat(info.formats, { 
+        quality: 'highestaudio',
+        filter: 'audioonly' 
+      })
+      if (!format?.url) throw new Error('YTDL-Core falló')
+      return { url: format.url, title: info.videoDetails.title }
     }
   }
 ]
@@ -97,76 +102,148 @@ const VideoAPIs = [
     name: 'YTDown',
     download: async (url) => {
       const r = await ytdown.download(url, 'mp4')
+      if (!r?.download) throw new Error('YTDown falló')
       return { url: r.download, title: r.title, quality: '720p' }
+    }
+  },
+  {
+    name: 'YTDL-Core',
+    download: async (url) => {
+      const info = await ytdl.getInfo(url)
+      const format = ytdl.chooseFormat(info.formats, { 
+        quality: 'highest',
+        filter: format => format.hasVideo && format.hasAudio 
+      })
+      if (!format?.url) throw new Error('YTDL-Core falló')
+      return { 
+        url: format.url, 
+        title: info.videoDetails.title,
+        quality: format.qualityLabel || '720p'
+      }
     }
   }
 ]
 
 /* =======================
-   🎯 HANDLER
+   🎯 HANDLER PRINCIPAL
 ======================= */
 const handler = async (m, { conn, text, command }) => {
-  if (!text) return m.reply('📌 Usa: ytmp3 <url> | ytmp4 <url>')
+  // Validar entrada
+  if (!text?.trim()) {
+    return m.reply(
+      `📌 *Uso correcto:*\n\n` +
+      `• *ytmp3* <url> → Audio MP3\n` +
+      `• *ytmp4* <url> → Video MP4\n` +
+      `• *ytmp3doc* <url> → Audio como documento\n` +
+      `• *ytmp4doc* <url> → Video como documento\n\n` +
+      `_Ejemplo: ytmp3 https://youtu.be/xxxxx_`
+    )
+  }
 
+  // Validar URL de YouTube
+  if (!/youtu\.?be/.test(text)) {
+    return m.reply('❌ Proporciona un enlace válido de YouTube')
+  }
+
+  // Verificar solicitudes en curso
   if (userRequests[m.sender]) {
-    return m.reply('⏳ Ya hay una descarga en proceso...')
+    return m.reply('⏳ Ya tienes una descarga en proceso. Espera a que termine...')
   }
 
   userRequests[m.sender] = true
 
   try {
-    if (!/youtu\.?be/.test(text)) {
-      throw new Error('Enlace de YouTube inválido')
-    }
-
+    // Determinar tipo de descarga
     const isAudio = /ytmp3|yta/i.test(command)
     const isDoc = /doc/i.test(command)
 
-    const info = await ytdl.getInfo(text)
-    const title = sanitize(info.videoDetails.title)
-    const thumb = info.videoDetails.thumbnails.at(-1)?.url
+    // Obtener información del video
+    let info, title, thumb
+    try {
+      info = await ytdl.getInfo(text)
+      title = sanitize(info.videoDetails.title)
+      thumb = info.videoDetails.thumbnails.at(-1)?.url || null
+    } catch (e) {
+      // Fallback con yt-search si ytdl falla
+      const search = await yts({ videoId: ytdl.getVideoID(text) })
+      title = sanitize(search.title)
+      thumb = search.thumbnail
+    }
 
-    m.react('⬇️')
+    // Mensaje de inicio
+    await m.reply(
+      `⬇️ *Descargando...*\n\n` +
+      `📝 *Título:* ${title}\n` +
+      `🎵 *Formato:* ${isAudio ? 'MP3 Audio' : 'MP4 Video'}\n\n` +
+      `_Esto puede tomar unos segundos..._`
+    )
+    m.react('⏳')
 
+    // Descargar según el tipo
     if (isAudio) {
+      // 🎵 DESCARGA DE AUDIO
       const res = await downloadWithFallback(text, AudioAPIs)
 
       await conn.sendMessage(m.chat, {
         [isDoc ? 'document' : 'audio']: { url: res.url },
         mimetype: 'audio/mpeg',
-        fileName: `${title}.mp3`
+        fileName: `${title}.mp3`,
+        ...(isDoc && { caption: `🎵 *${title}*\n📦 API: ${res.apiUsed}` })
       }, { quoted: m })
+
+      m.react('✅')
+      
     } else {
+      // 🎬 DESCARGA DE VIDEO
       const res = await downloadWithFallback(text, VideoAPIs)
 
       await conn.sendMessage(m.chat, {
         [isDoc ? 'document' : 'video']: { url: res.url },
         mimetype: 'video/mp4',
         fileName: `${title}.mp4`,
-        caption: `🎬 ${title}\n📺 ${res.quality}\n⚙️ ${res.apiUsed}`
+        caption: `🎬 *${title}*\n📺 Calidad: ${res.quality || '720p'}\n⚙️ API: ${res.apiUsed}`
       }, { quoted: m })
-    }
 
-    m.react('✅')
+      m.react('✅')
+    }
 
   } catch (e) {
     m.react('❌')
-    await m.reply(`❌ Error:\n${e.message}`)
+    await m.reply(
+      `❌ *Error en la descarga*\n\n` +
+      `📋 Detalles: ${e.message}\n\n` +
+      `💡 *Posibles soluciones:*\n` +
+      `• Verifica que el enlace sea válido\n` +
+      `• Intenta con otro video\n` +
+      `• El video puede estar restringido`
+    )
   } finally {
     delete userRequests[m.sender]
   }
 }
 
+/* =======================
+   ⚙️ CONFIGURACIÓN
+======================= */
 handler.command = /^(ytmp3|ytmp4|ytmp3doc|ytmp4doc|yta|ytv)$/i
 handler.tags = ['downloader']
-handler.help = ['ytmp3 <url>', 'ytmp4 <url>']
+handler.help = [
+  'ytmp3 <url> - Descargar audio MP3',
+  'ytmp4 <url> - Descargar video MP4',
+  'ytmp3doc <url> - Audio como documento',
+  'ytmp4doc <url> - Video como documento'
+]
 handler.limit = true
 
 export default handler
 
 /* =======================
-   🛠️ UTIL
+   🛠️ UTILIDADES
 ======================= */
 function sanitize(t) {
-  return t.replace(/[<>:"/\\|?*]/g, '').slice(0, 180)
+  return t
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180)
 }

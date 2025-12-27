@@ -1,4 +1,4 @@
-// 🎧 Comando /play — Búsqueda y descarga inteligente (ACTUALIZADO 2025)
+// 🎧 Comando /play — Búsqueda y descarga inteligente con BOTONES (2025)
 
 import { ogmp3 } from '../lib/youtubedl.js'
 import { savetube } from '../lib/yt-savetube.js'
@@ -131,7 +131,8 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
     return m.reply(
       `🎧 *Uso correcto:*\n\n` +
       `${usedPrefix + command} nombre de la canción\n` +
-      `${usedPrefix + command} link de YouTube`
+      `${usedPrefix + command} link de YouTube\n\n` +
+      `_Funciona con búsqueda y enlaces directos_`
     )
   }
 
@@ -144,6 +145,8 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
   try {
     const query = text.trim()
     const match = query.match(youtubeRegexID)
+    
+    // Si es un enlace directo, extraer ID; si no, buscar por nombre
     const searchQuery = match ? `https://youtu.be/${match[1]}` : query
 
     const results = await yts(searchQuery)
@@ -159,15 +162,34 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 
     setTimeout(() => delete userSelections[m.sender], 120000)
 
-    await conn.sendMessage(m.chat, {
+    // Crear botones interactivos
+    const buttons = [
+      {
+        buttonId: `.selectmp3_${m.sender}`,
+        buttonText: { displayText: '🎵 Audio MP3' },
+        type: 1
+      },
+      {
+        buttonId: `.selectmp4_${m.sender}`,
+        buttonText: { displayText: '🎬 Video MP4' },
+        type: 1
+      }
+    ]
+
+    const buttonMessage = {
       image: { url: video.thumbnail },
       caption:
         `🎵 *${video.title}*\n\n` +
-        `Responde:\n` +
-        `• *1* o *mp3* → Audio\n` +
-        `• *2* o *mp4* → Video\n\n` +
-        `_Tienes 2 minutos_`
-    }, { quoted: m })
+        `👤 *Autor:* ${video.author?.name || 'Desconocido'}\n` +
+        `⏱️ *Duración:* ${video.timestamp || 'N/A'}\n` +
+        `👁️ *Vistas:* ${video.views?.toLocaleString() || 'N/A'}\n\n` +
+        `📥 Selecciona el formato de descarga:`,
+      footer: '🤖 Bot de descargas • Powered by YT APIs',
+      buttons: buttons,
+      headerType: 4
+    }
+
+    await conn.sendMessage(m.chat, buttonMessage, { quoted: m })
 
   } catch (e) {
     await m.reply(`❌ Error: ${e.message}`)
@@ -184,13 +206,18 @@ async function downloadAudio(m, conn, selection) {
   userRequests[m.sender] = true
   delete userSelections[m.sender]
 
+  await m.reply('⏳ Descargando audio...')
+
   try {
     const res = await downloadWithFallback(video.url, AudioAPIs)
     await conn.sendMessage(m.chat, {
       audio: { url: res.url },
       mimetype: 'audio/mpeg',
-      fileName: `${sanitize(video.title)}.mp3`
+      fileName: `${sanitize(video.title)}.mp3`,
+      caption: `🎵 *${video.title}*\n\n📦 Fuente: ${res.source}`
     }, { quoted: m })
+  } catch (e) {
+    await m.reply(`❌ Error descargando audio: ${e.message}`)
   } finally {
     delete userRequests[m.sender]
   }
@@ -204,13 +231,18 @@ async function downloadVideo(m, conn, selection) {
   userRequests[m.sender] = true
   delete userSelections[m.sender]
 
+  await m.reply('⏳ Descargando video...')
+
   try {
     const res = await downloadWithFallback(video.url, VideoAPIs)
     await conn.sendMessage(m.chat, {
       video: { url: res.url },
       mimetype: 'video/mp4',
-      fileName: `${sanitize(video.title)}.mp4`
+      fileName: `${sanitize(video.title)}.mp4`,
+      caption: `🎬 *${video.title}*\n\n📦 Fuente: ${res.source} (${res.quality || '720p'})`
     }, { quoted: m })
+  } catch (e) {
+    await m.reply(`❌ Error descargando video: ${e.message}`)
   } finally {
     delete userRequests[m.sender]
   }
@@ -226,18 +258,19 @@ handler.before = async (m, { conn }) => {
   const input = (m.text || '').toLowerCase().trim()
   if (!input) return
 
-  if (['1', 'mp3', 'audio'].includes(input)) {
+  // Detectar comando de botón o texto manual
+  if (input.startsWith('.selectmp3_') || ['1', 'mp3', 'audio'].includes(input)) {
     await downloadAudio(m, conn, sel)
     return true
   }
 
-  if (['2', 'mp4', 'video'].includes(input)) {
+  if (input.startsWith('.selectmp4_') || ['2', 'mp4', 'video'].includes(input)) {
     await downloadVideo(m, conn, sel)
     return true
   }
 
-  await m.reply('❌ Opción inválida. Usa *1* o *2*')
-  return true
+  // Si hay una selección activa pero el input no coincide, ignorar
+  return false
 }
 
 // =========================
@@ -249,7 +282,7 @@ function sanitize(t) {
 
 handler.command = ['play', 'musica', 'audio']
 handler.tags = ['downloader']
-handler.help = ['play <canción>']
+handler.help = ['play <canción o enlace>']
 handler.limit = false
 
 export default handler
