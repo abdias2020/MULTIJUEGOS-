@@ -1,39 +1,111 @@
-import cheerio from 'cheerio'
-import fetch from 'node-fetch'
+import axios from 'axios'
+import * as cheerio from 'cheerio'
+import qs from 'qs'
 
 /* ======================== FACEBOOK SCRAPER ======================== */
+const TARGET_URL = 'https://fdownloader.net/es'
+
 async function facebookDl(url) {
-  const res = await fetch('https://fdownloader.net/')
-  const html = await res.text()
-  const $ = cheerio.load(html)
-
-  const token = $('input[name="__RequestVerificationToken"]').attr('value')
-  if (!token) throw new Error('No se pudo obtener token')
-
-  const response = await fetch('https://fdownloader.net/api/ajaxSearch', {
-    method: 'POST',
+  // 1️⃣ Obtener tokens dinámicos
+  const page = await axios.get(TARGET_URL, {
     headers: {
-      cookie: res.headers.get('set-cookie'),
-      'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      referer: 'https://fdownloader.net/'
-    },
-    body: new URLSearchParams({
-      __RequestVerificationToken: token,
-      q: url
-    })
+      'User-Agent': 'Mozilla/5.0'
+    }
   })
 
-  const json = await response.json()
-  if (!json?.data) throw new Error('No se pudo procesar el video')
+  const html = page.data
+  const k_exp = html.match(/k_exp="(.*?)"/)?.[1]
+  const k_token = html.match(/k_token="(.*?)"/)?.[1]
 
-  const $$ = cheerio.load(json.data)
+  if (!k_exp || !k_token) {
+    throw new Error('No se pudieron obtener los tokens')
+  }
+
+  // 2️⃣ Buscar video
+  const search = await axios.post(
+    'https://v3.fdownloader.net/api/ajaxSearch',
+    qs.stringify({
+      k_exp,
+      k_token,
+      q: url,
+      lang: 'es',
+      web: 'fdownloader.net',
+      v: 'v2'
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'User-Agent': 'Mozilla/5.0',
+        Origin: 'https://fdownloader.net',
+        Referer: 'https://fdownloader.net/'
+      }
+    }
+  )
+
+  if (search.data.status !== 'ok') {
+    throw new Error('No se pudo procesar el video')
+  }
+
+  const $ = cheerio.load(search.data.data)
   const result = {}
 
-  $$('.button.is-success.is-small.download-link-fb').each(function () {
-    const quality = $$(this).attr('title')?.split(' ')[1] // HD / SD
-    const link = $$(this).attr('href')
+  // 3️⃣ Enlaces normales (SD / HD)
+  $('a.download-link-fb').each((_, el) => {
+    const quality = $(el).closest('tr').find('.video-quality').text().trim()
+    const link = $(el).attr('href')
     if (quality && link) result[quality] = link
   })
+
+  // 4️⃣ Detectar 1080p (render / convert)
+  const renderBtn = $('button[onclick*="convertFile"]')
+  if (renderBtn.length) {
+    const videoUrl = renderBtn.attr('data-videourl')
+    const videoCodec = renderBtn.attr('data-videocodec')
+    const videoType = renderBtn.attr('data-videotype')
+    const fquality = renderBtn.attr('data-fquality')
+
+    const audioUrl = $('#audioUrl').val()
+    const audioType = $('#audioType').val()
+    const v_id = $('#FbId').val()
+
+    const c_token = search.data.data.match(/c_token\s*=\s*"(.*?)"/)?.[1]
+    const exp = search.data.data.match(/k_exp\s*=\s*"(.*?)"/)?.[1]
+    const convertUrl =
+      search.data.data.match(/k_url_convert\s*=\s*"(.*?)"/)?.[1] ||
+      'https://s3.vidcdn.app/api/json/convert'
+
+    if (videoUrl && audioUrl && c_token) {
+      const convert = await axios.post(
+        convertUrl,
+        qs.stringify({
+          ftype: 'mp4',
+          v_id,
+          videoUrl,
+          videoType,
+          videoCodec,
+          audioUrl,
+          audioType,
+          fquality,
+          fname: 'Facebook',
+          exp,
+          token: c_token,
+          cv: 'v2'
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'User-Agent': 'Mozilla/5.0',
+            Origin: 'https://fdownloader.net',
+            Referer: 'https://fdownloader.net/'
+          }
+        }
+      )
+
+      if (convert.data?.result) {
+        result['1080p'] = convert.data.result
+      }
+    }
+  }
 
   if (!Object.keys(result).length) {
     throw new Error('No se encontraron enlaces')
@@ -47,7 +119,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
   try {
     if (!args[0]) {
       return m.reply(
-        `❌ Uso incorrecto\n\nEjemplo:\n${usedPrefix + command} https://fb.watch/...`
+        `❌ Uso incorrecto\n\nEjemplo:\n${usedPrefix + command} https://facebook.com/...`
       )
     }
 
@@ -56,13 +128,21 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
       return m.reply('⚠️ Enlace de Facebook inválido')
     }
 
-    await m.react('🔍')
-    const waitMsg = await m.reply('🔎 Buscando video de Facebook...')
+    await m.react('⏳')
+    const waitMsg = await m.reply('🔎 Procesando video de Facebook...')
 
     const links = await facebookDl(fbUrl)
 
-    const videoUrl = links.HD || links.SD
-    if (!videoUrl) throw new Error('No hay video disponible')
+    // Prioridad: 1080p > HD > SD
+    const videoUrl =
+      links['1080p'] ||
+      links['HD'] ||
+      links['SD'] ||
+      Object.values(links)[0]
+
+    const quality =
+      links['1080p'] ? '1080p' :
+      links['HD'] ? 'HD' : 'SD'
 
     await conn.sendMessage(
       m.chat,
@@ -73,7 +153,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
           `╔══════════════════╗\n` +
           `║  ✅ FACEBOOK LISTO  ║\n` +
           `╚══════════════════╝\n\n` +
-          `🎥 Calidad: ${links.HD ? 'HD' : 'SD'}`
+          `🎥 Calidad: ${quality}`
       },
       { quoted: m }
     )
