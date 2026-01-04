@@ -1,7 +1,7 @@
 # ✨ MULTIJUEGOS-BOT 2026 ✨
 
 <p align="center">
-  <img src="https://telegra.ph/file/c3396a8d9b8ba43aed33e.jpg" width="800"/>
+  <img src="https://i.postimg.cc/pXpyMxwL/Menu2.jpg" width="800"/>
 </p>
 
 ---
