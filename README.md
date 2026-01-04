@@ -36,9 +36,10 @@ Fue creado a partir de **LoliBot** con el propósito de:
 
 ---
 
-## ☁️ Activar MULTIJUEGOS-BOT 24/7 en SkyPlus Host
+## ☁️ Activar MULTIJUEGOS-BOT 24/7 en Swallox Hosting
 
-[![SkyUltraPlus Host](https://img.shields.io/badge/SkyUltraPlus-Host-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/fZbcCLpSH6Y?si=1sDen7Bzmb7jVpAI)
+[![Swallox Hosting](https://img.shields.io/badge/Swallox-Host-FF00AA?style=for-the-badge&logo=github&logoColor=white)](https://dash.swallox.com)  
+[Panel de Control](https://panel.swallox.com)
 
 ---
 
